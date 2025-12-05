@@ -376,12 +376,12 @@ Check in Control Center that the update was correctly detected and published in 
 DELETE FROM C##CFLTUSER.EMPLOYEES WHERE EMPLOYEE_ID = 3;
 
 COMMIT;
-```
+```∫
 
 ### 4.6 Monitor in Control Center
 
 1. Open [http://localhost:9021](http://localhost:9021)
-2. Navigate to **Topics** → `xstream.TESTING.EMPLOYEES`
+2. Navigate to **Topics** → `xstream.C__CFLTUSER.EMPLOYEES`
 3. Click **Messages** to view CDC events in real-time
 4. Observe:
    - Message throughput

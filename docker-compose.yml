@@ -133,6 +133,8 @@ services:
       - schema-registry
     ports:
       - "8083:8083"
+    volumes:
+      - ./etc/confluentinc-kafka-connect-jdbc-10.9.1.zip:/tmp/confluentinc-kafka-connect-jdbc-10.9.1.zip
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'broker1:29092'
       CONNECT_REST_ADVERTISED_HOST_NAME: connect
@@ -164,6 +166,8 @@ services:
         echo "Installing Connector"
         confluent-hub install --no-prompt confluentinc/kafka-connect-oracle-xstream-cdc-source:1.2.0
         cp /usr/lib/oracle/23/client64/lib/*.jar /usr/share/confluent-hub-components/confluentinc-kafka-connect-oracle-xstream-cdc-source/lib/
+        confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:latest
+        cp /usr/lib/oracle/23/client64/lib/*.jar /usr/share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/
         #
         echo "Launching Kafka Connect worker"
         /etc/confluent/docker/run &
