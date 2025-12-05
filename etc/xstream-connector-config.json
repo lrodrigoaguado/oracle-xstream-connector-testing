@@ -1,7 +1,7 @@
 {
-  "name": "OracleXStreamSourceConnectorConnector_NoSMT",
+  "name": "OracleXStreamSourceConnector",
   "config": {
-    "name": "OracleXStreamSourceConnectorConnector_NoSMT",
+    "name": "OracleXStreamSourceConnector",
     "connector.class": "io.confluent.connect.oracle.xstream.cdc.OracleXStreamSourceConnector",
     "tasks.max": "1",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
@@ -11,17 +11,23 @@
     "database.hostname": "ec2-34-253-120-255.eu-west-1.compute.amazonaws.com",
     "database.port": "1521",
     "database.user": "c##cfltuser",
-    "database.password": "**********************",
+    "database.password": "My_RandomPass192837465",
     "database.dbname": "XE",
     "database.service.name": "XE",
     "database.pdb.name": "XEPDB1",
     "database.out.server.name": "XOUT",
     "database.processor.licenses": "1",
     "topic.prefix": "xstream",
-    "table.include.list": "TESTING[.].*",
+    "table.include.list": "C##CFLTUSER[.].*",
     "schema.history.internal.kafka.topic": "__orcl-schema-changes.XEPDB1",
     "schema.history.internal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092",
     "schema.history.internal.skip.unparseable.ddl": "true",
-    "schema.history.internal.store.only.captured.tables.ddl": "true"
+    "schema.history.internal.store.only.captured.tables.ddl": "true",
+    "transforms": "flatten",
+    "transforms.flatten.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.flatten.delete.handling.mode": "rewrite",
+    "transforms.flatten.delete.tombstone.handling.mode": "drop",
+    "transforms.flatten.add.fields": "op:operation_type,source.ts_us:operation_time,ts_ns:sortable_sequence",
+    "transforms.flatten.add.fields.prefix": "db_"
   }
 }
