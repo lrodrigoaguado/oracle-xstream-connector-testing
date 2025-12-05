@@ -1,0 +1,27 @@
+{
+  "name": "OracleXStreamSourceConnectorConnector_NoSMT",
+  "config": {
+    "name": "OracleXStreamSourceConnectorConnector_NoSMT",
+    "connector.class": "io.confluent.connect.oracle.xstream.cdc.OracleXStreamSourceConnector",
+    "tasks.max": "1",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "database.hostname": "ec2-34-253-120-255.eu-west-1.compute.amazonaws.com",
+    "database.port": "1521",
+    "database.user": "c##cfltuser",
+    "database.password": "**********************",
+    "database.dbname": "XE",
+    "database.service.name": "XE",
+    "database.pdb.name": "XEPDB1",
+    "database.out.server.name": "XOUT",
+    "database.processor.licenses": "1",
+    "topic.prefix": "xstream",
+    "table.include.list": "TESTING[.].*",
+    "schema.history.internal.kafka.topic": "__orcl-schema-changes.XEPDB1",
+    "schema.history.internal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092",
+    "schema.history.internal.skip.unparseable.ddl": "true",
+    "schema.history.internal.store.only.captured.tables.ddl": "true"
+  }
+}
