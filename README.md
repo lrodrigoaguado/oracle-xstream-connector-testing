@@ -17,13 +17,11 @@ graph LR
     A[Oracle DB<br/>AWS EC2] -->|XStream Out| B[Kafka Connect<br/>Docker]
     B -->|CDC Events| C[Kafka Brokers<br/>3-node cluster]
     C --> D[Control Center<br/>Next Gen]
-    C --> E[Schema Registry]
     F[SQL Client] -->|DML/DDL| A
 
     style A fill:#f96,stroke:#333,stroke-width:2px
     style B fill:#6c9,stroke:#333,stroke-width:2px
     style C fill:#69f,stroke:#333,stroke-width:2px
-    style D fill:#f9c,stroke:#333,stroke-width:2px
 ```
 
 ---
@@ -74,7 +72,6 @@ Before you begin, ensure you have:
 - **Terraform** >= 1.0
 - **Docker** and **Docker Compose** installed locally
 - **SSH key pair** for EC2 access
-- **Confluent Cloud API credentials** (if using existing resources)
 
 ---
 
@@ -82,48 +79,19 @@ Before you begin, ensure you have:
 
 ### 1.1 Configure Terraform Variables
 
-Navigate to the Terraform directory and create a `terraform.tfvars` file:
-
-```bash
-cd tf
-```
-
-Create `terraform.tfvars` with your configuration:
-
-```hcl
-# AWS Region
-region = "eu-west-1"
-
-# Resource prefix
-prefix = "test-xstream-connector"
-
-# Oracle Database Configuration
-oracle_db_name     = "XE"
-oracle_db_user     = "c##cfltuser"
-oracle_db_password = "My_RandomPass192837465"
-oracle_db_port     = 1521
-oracle_pdb_name    = "XEPDB1"
-
-# XStream Configuration
-oracle_xtream_outbound_server_name = "XOUT"
-oracle_db_table_include_list       = "TESTING[.].*"
-
-# Confluent Cloud (optional - only if using existing resources)
-# confluent_cloud_api_key    = "your-api-key"
-# confluent_cloud_api_secret = "your-api-secret"
-```
+Navigate to the Terraform directory and update the `variables.tf` file with your configuration for the Oracle deployment on AWS
 
 ### 1.2 Initialize and Deploy
 
 ```bash
 # Initialize Terraform
-terraform init
+terraform -chdir=tf init
 
 # Review the execution plan
-terraform plan
+terraform -chdir=tf plan
 
 # Deploy the infrastructure
-terraform apply
+terraform -chdir=tf apply
 ```
 
 > **⏱️ Deployment Time**: Approximately 10-15 minutes
@@ -134,8 +102,8 @@ Once deployment completes, Terraform will output connection details:
 
 ```bash
 # View outputs
-terraform output oracle_vm_db_details
-terraform output oracle_xstream_connector
+terraform -chdir=tf output oracle_vm_db_details
+terraform -chdir=tf output oracle_xstream_connector
 ```
 
 **Connect to the EC2 instance:**
@@ -161,23 +129,6 @@ docker inspect oracle-xe | grep -A 5 Health
 docker exec -it oracle-xe sqlplus system/Welcome1@localhost:1521/XEPDB1
 ```
 
-**Test XStream configuration:**
-
-```sql
--- Connect as SYSDBA
-CONNECT sys/Welcome1 AS SYSDBA
-
--- Verify XStream outbound server
-SELECT SERVER_NAME, CONNECT_USER, SOURCE_DATABASE, CAPTURE_USER
-FROM DBA_XSTREAM_OUTBOUND;
-
--- Should show: XOUT | c##cfltuser | XEPDB1 | ...
-
--- Verify the testing user exists
-ALTER SESSION SET CONTAINER=XEPDB1;
-SELECT USERNAME FROM DBA_USERS WHERE USERNAME = 'TESTING';
-```
-
 > [!IMPORTANT]
 > The Oracle database is configured with:
 > - **SYS password**: `Welcome1`
@@ -189,32 +140,20 @@ SELECT USERNAME FROM DBA_USERS WHERE USERNAME = 'TESTING';
 
 ## 🐳 Step 2: Start Local Confluent Platform
 
-### 2.1 Build Custom Connect Image
-
-The Connect image requires Oracle Instant Client libraries:
-
-```bash
-# Return to project root
-cd ..
-
-# Build the custom Connect image
-docker build -t custom-connect:latest .
-```
-
-This Dockerfile:
-- Starts from `confluentinc/cp-server-connect:7.9.5`
-- Installs `libaio` (required by Oracle client)
-- Installs Oracle Instant Client 23.26.0.0
-
-### 2.2 Start the Cluster
+### 2.1 Start the Cluster
 
 ```bash
 # Start all services
-docker-compose up -d
+docker-compose up -d --build
 
 # Monitor startup
 docker-compose logs -f
 ```
+
+The Connect image requires Oracle Instant Client libraries, and so uses a modified version of the original cp-connect base image. This Dockerfile:
+- Starts from `confluentinc/cp-server-connect:7.9.5`
+- Installs `libaio` (required by Oracle client)
+- Installs Oracle Instant Client 23.26.0.0
 
 **Startup sequence:**
 1. Brokers initialize in KRaft mode (combined broker/controller)
@@ -307,8 +246,7 @@ Edit `etc/xstream-connector-config.json` with your Oracle database details:
 
 > **🔑 Get EC2 Public DNS:**
 > ```bash
-> cd tf
-> terraform output oracle_xstream_connector
+> terraform -chdir=tf output oracle_xstream_connector
 > ```
 
 ### 3.2 Deploy the Connector
@@ -384,7 +322,7 @@ docker exec -it oracle-xe sqlplus testing/password@localhost:1521/XEPDB1
 
 ```sql
 -- Create a sample table
-CREATE TABLE TESTING.EMPLOYEES (
+CREATE TABLE C##CFLTUSER.EMPLOYEES (
     EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
     FIRST_NAME VARCHAR2(50),
     LAST_NAME VARCHAR2(50),
@@ -393,22 +331,19 @@ CREATE TABLE TESTING.EMPLOYEES (
     SALARY NUMBER(8,2),
     DEPARTMENT VARCHAR2(50)
 );
-
--- Verify table creation
-DESC TESTING.EMPLOYEES;
 ```
 
 ### 4.2 Insert Test Data
 
 ```sql
 -- Insert sample records
-INSERT INTO TESTING.EMPLOYEES VALUES
+INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
 (1, 'John', 'Doe', 'john.doe@example.com', SYSDATE, 75000.00, 'Engineering');
 
-INSERT INTO TESTING.EMPLOYEES VALUES
+INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
 (2, 'Jane', 'Smith', 'jane.smith@example.com', SYSDATE, 82000.00, 'Marketing');
 
-INSERT INTO TESTING.EMPLOYEES VALUES
+INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
 (3, 'Bob', 'Johnson', 'bob.johnson@example.com', SYSDATE, 68000.00, 'Sales');
 
 -- Commit the transaction
@@ -417,64 +352,13 @@ COMMIT;
 
 ### 4.3 Verify Data in Kafka
 
-**List topics:**
-
-```bash
-# From your local machine
-docker exec -it broker1 kafka-topics --bootstrap-server broker1:29092 --list | grep xstream
-```
-
-Expected topic: `xstream.TESTING.EMPLOYEES`
-
-**Consume messages:**
-
-```bash
-# Consume from the beginning
-docker exec -it broker1 kafka-console-consumer \
-  --bootstrap-server broker1:29092 \
-  --topic xstream.TESTING.EMPLOYEES \
-  --from-beginning \
-  --property print.key=true \
-  --property print.timestamp=true
-```
-
-**Expected output format:**
-
-```json
-{
-  "before": null,
-  "after": {
-    "EMPLOYEE_ID": 1,
-    "FIRST_NAME": "John",
-    "LAST_NAME": "Doe",
-    "EMAIL": "john.doe@example.com",
-    "HIRE_DATE": 1733400000000,
-    "SALARY": 75000.00,
-    "DEPARTMENT": "Engineering"
-  },
-  "source": {
-    "version": "1.2.0",
-    "connector": "oracle-xstream",
-    "name": "xstream",
-    "ts_ms": 1733400123456,
-    "snapshot": "false",
-    "db": "XE",
-    "schema": "TESTING",
-    "table": "EMPLOYEES",
-    "txId": "5.23.456",
-    "scn": "1234567",
-    "commit_scn": "1234568"
-  },
-  "op": "c",
-  "ts_ms": 1733400123789
-}
-```
+Connect to Control Center and check the list of topics. A new topic called xstream.C__CFLTUSER.EMPLOYEES should have appeared a three new messages should be there.
 
 ### 4.4 Test UPDATE Operations
 
 ```sql
 -- Update a record
-UPDATE TESTING.EMPLOYEES
+UPDATE C##CFLTUSER.EMPLOYEES
 SET SALARY = 80000.00, DEPARTMENT = 'Senior Engineering'
 WHERE EMPLOYEE_ID = 1;
 
@@ -483,45 +367,15 @@ COMMIT;
 
 **Verify in Kafka:**
 
-The message will contain both `before` and `after` states:
-
-```json
-{
-  "before": {
-    "EMPLOYEE_ID": 1,
-    "SALARY": 75000.00,
-    "DEPARTMENT": "Engineering"
-  },
-  "after": {
-    "EMPLOYEE_ID": 1,
-    "SALARY": 80000.00,
-    "DEPARTMENT": "Senior Engineering"
-  },
-  "op": "u"
-}
-```
+Check in Control Center that the update was correctly detected and published in the corresponding topic.
 
 ### 4.5 Test DELETE Operations
 
 ```sql
 -- Delete a record
-DELETE FROM TESTING.EMPLOYEES WHERE EMPLOYEE_ID = 3;
+DELETE FROM C##CFLTUSER.EMPLOYEES WHERE EMPLOYEE_ID = 3;
 
 COMMIT;
-```
-
-**Verify in Kafka:**
-
-```json
-{
-  "before": {
-    "EMPLOYEE_ID": 3,
-    "FIRST_NAME": "Bob",
-    "LAST_NAME": "Johnson"
-  },
-  "after": null,
-  "op": "d"
-}
 ```
 
 ### 4.6 Monitor in Control Center
@@ -543,10 +397,10 @@ COMMIT;
 
 ```sql
 -- Add a new column
-ALTER TABLE TESTING.EMPLOYEES ADD (PHONE_NUMBER VARCHAR2(20));
+ALTER TABLE C##CFLTUSER.EMPLOYEES ADD (PHONE_NUMBER VARCHAR2(20));
 
 -- Insert data with new column
-INSERT INTO TESTING.EMPLOYEES VALUES
+INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
 (4, 'Alice', 'Williams', 'alice@example.com', SYSDATE,
  90000.00, 'Engineering', '555-1234');
 COMMIT;
@@ -566,7 +420,7 @@ docker exec -it broker1 kafka-console-consumer \
 -- Insert 1000 records
 BEGIN
   FOR i IN 1..1000 LOOP
-    INSERT INTO TESTING.EMPLOYEES VALUES
+    INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
     (i+100, 'User'||i, 'Test'||i, 'user'||i||'@test.com',
      SYSDATE, 50000 + (i*100), 'Department'||MOD(i,5));
   END LOOP;
@@ -581,7 +435,7 @@ Monitor throughput in Control Center.
 
 ```sql
 -- Create table with various data types
-CREATE TABLE TESTING.DATA_TYPES_TEST (
+CREATE TABLE C##CFLTUSER.DATA_TYPES_TEST (
     ID NUMBER PRIMARY KEY,
     TEXT_COL VARCHAR2(100),
     NUMBER_COL NUMBER(10,2),
@@ -592,7 +446,7 @@ CREATE TABLE TESTING.DATA_TYPES_TEST (
 );
 
 -- Insert test data
-INSERT INTO TESTING.DATA_TYPES_TEST VALUES (
+INSERT INTO C##CFLTUSER.DATA_TYPES_TEST VALUES (
     1,
     'Sample Text',
     12345.67,
