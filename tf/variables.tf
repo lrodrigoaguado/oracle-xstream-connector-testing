@@ -11,37 +11,6 @@ variable "prefix" {
   default     = "test-xstream-connector"
 }
 
-################ Confluent Cloud Variables
-variable "confluent_cloud_api_key" {
-  description = "Confluent Cloud API Key (also referred as Cloud API ID)."
-  type        = string
-}
-
-variable "confluent_cloud_api_secret" {
-  description = "Confluent Cloud API Secret."
-  type        = string
-  sensitive   = true
-}
-
-variable "use_existing_confluent_resources" {
-  description = "Set to true to use existing Confluent Cloud environment and cluster."
-  type        = bool
-  default     = false
-}
-
-variable "confluent_environment_name" {
-  description = "Name of the existing Confluent Cloud environment (required if use_existing_confluent_resources is true)."
-  type        = string
-  default     = null
-}
-
-variable "confluent_cluster_name" {
-  description = "Name of the existing Confluent Cloud cluster (required if use_existing_confluent_resources is true)."
-  type        = string
-  default     = null
-}
-
-
 ############### AWS Networking Variables
 variable "vpc_cidr" {
   description = "VPC Cidr to be created"
