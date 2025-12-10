@@ -194,10 +194,15 @@ resource "aws_instance" "oracle_instance" {
 
     CREATE TABLESPACE xstream_adm_tbs DATAFILE '/opt/oracle/oradata/XE/XEPDB1/xstream_adm_tbs.dbf' SIZE 25M AUTOEXTEND ON;
     CREATE TABLESPACE xstream_tbs DATAFILE '/opt/oracle/oradata/XE/XEPDB1/xstream_tbs.dbf' SIZE 25M AUTOEXTEND ON;
+    EXIT;
+    SQL
 
-    CREATE USER testing IDENTIFIED BY password;
-    GRANT CONNECT, RESOURCE TO testing;
-    ALTER USER testing QUOTA UNLIMITED ON USERS;
+    docker exec -i oracle-xe sqlplus /nolog <<SQL
+    CONNECT sys/Welcome1 AS SYSDBA
+    ALTER SESSION SET CONTAINER = XEPDB1;
+    GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER TO c##cfltuser;
+    GRANT UNLIMITED TABLESPACE TO c##cfltuser;
+    ALTER USER c##cfltuser QUOTA UNLIMITED ON USERS;
     EXIT;
     SQL
 
@@ -208,6 +213,9 @@ resource "aws_instance" "oracle_instance" {
 
     GRANT CREATE SESSION, SET CONTAINER, SELECT_CATALOG_ROLE TO c##cfltuser CONTAINER=ALL;
     GRANT FLASHBACK ANY TABLE, SELECT ANY TABLE, LOCK ANY TABLE TO c##cfltuser CONTAINER=ALL;
+    GRANT CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER TO c##cfltuser CONTAINER=ALL;
+    GRANT UNLIMITED TABLESPACE TO C##CFLTUSER;
+    ALTER USER C##CFLTUSER QUOTA UNLIMITED ON USERS;
 
     BEGIN
       DBMS_XSTREAM_AUTH.GRANT_ADMIN_PRIVILEGE(
@@ -228,8 +236,10 @@ resource "aws_instance" "oracle_instance" {
       tables DBMS_UTILITY.UNCL_ARRAY;
       schemas DBMS_UTILITY.UNCL_ARRAY;
     BEGIN
-      tables(1) := NULL;
-      schemas(1) := 'TESTING';
+      tables(1) := 'C##CFLTUSER.EMPLOYEES';
+      tables(2) := NULL;
+      schemas(1) := 'C##CFLTUSER';
+      schemas(2) := NULL;
       DBMS_XSTREAM_ADM.CREATE_OUTBOUND(
         server_name => 'XOUT',
         source_container_name => 'XEPDB1',

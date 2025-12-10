@@ -25,3 +25,6 @@ target/
 .terraform.lock.hcl
 crash.log
 sshkey*
+
+
+*connector.json
