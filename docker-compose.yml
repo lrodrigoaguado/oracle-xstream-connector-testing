@@ -104,7 +104,6 @@ services:
       KAFKA_CONFLUENT_CONSUMER_LAG_EMITTER_ENABLED: "true"
 
 
-
   schema-registry:
     image: confluentinc/cp-schema-registry:7.9.5
     hostname: schema-registry
@@ -135,6 +134,7 @@ services:
       - "8083:8083"
     volumes:
       - ./etc/confluentinc-kafka-connect-jdbc-10.9.1.zip:/tmp/confluentinc-kafka-connect-jdbc-10.9.1.zip
+      - ./etc/postgres/postgresql-42.7.8.jar:/usr/share/java/postgresql-42.7.8.jar
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'broker1:29092'
       CONNECT_REST_ADVERTISED_HOST_NAME: connect
@@ -158,7 +158,6 @@ services:
       CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "true"
       CONNECT_PLUGIN_DISCOVERY: "only_scan"
-
     command:
       - bash
       - -c
