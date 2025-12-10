@@ -211,35 +211,40 @@ Expected output:
 
 ### 3.1 Update Connector Configuration
 
-Edit `etc/xstream-connector-config.json` with your Oracle database details:
+Use the `xstream-source-connector.json.template` to generate a `etc/xstream-connector-config.json` file with your Oracle database details:
 
 ```json
 {
   "name": "OracleXStreamSourceConnector",
   "config": {
+    "name": "OracleXStreamSourceConnector",
     "connector.class": "io.confluent.connect.oracle.xstream.cdc.OracleXStreamSourceConnector",
     "tasks.max": "1",
-
-    "database.hostname": "<EC2_PUBLIC_DNS>",
-    "database.port": "1521",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "database.hostname": "XXXXX",
+    "database.port": "XXXXX",
     "database.user": "c##cfltuser",
     "database.password": "My_RandomPass192837465",
     "database.dbname": "XE",
     "database.service.name": "XE",
     "database.pdb.name": "XEPDB1",
     "database.out.server.name": "XOUT",
-
+    "database.processor.licenses": "1",
     "topic.prefix": "xstream",
-    "table.include.list": "TESTING[.].*",
-
+    "table.include.list": "C##CFLTUSER[.].*",
     "schema.history.internal.kafka.topic": "__orcl-schema-changes.XEPDB1",
     "schema.history.internal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092",
-
-    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-
-    "errors.log.enable": "true",
-    "errors.log.include.messages": "true"
+    "schema.history.internal.skip.unparseable.ddl": "true",
+    "schema.history.internal.store.only.captured.tables.ddl": "true",
+    "transforms": "flatten",
+    "transforms.flatten.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.flatten.delete.handling.mode": "rewrite",
+    "transforms.flatten.delete.tombstone.handling.mode": "drop",
+    "transforms.flatten.add.fields": "op:operation_type,source.ts_us:operation_time,ts_ns:sortable_sequence",
+    "transforms.flatten.add.fields.prefix": "db_"
   }
 }
 ```
@@ -255,7 +260,7 @@ Edit `etc/xstream-connector-config.json` with your Oracle database details:
 # Deploy connector via REST API
 curl -X POST http://localhost:8083/connectors \
   -H "Content-Type: application/json" \
-  -d @etc/xstream-connector-config.json
+  -d @etc/xstream-source-connector.json
 ```
 
 ### 3.3 Monitor Connector Status

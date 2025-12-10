@@ -10,7 +10,7 @@
     "errors.tolerance": "all",
     "errors.log.enable": "true",
     "errors.log.include.messages": "true",
-    "topics": ".*CFLTUSER.*",
+    "topics": "xstream.C__CFLTUSER.EMPLOYEES",
     "errors.deadletterqueue.topic.name": "DLQ",
     "connection.url": "jdbc:postgresql://postgres:5432/test-connector",
     "connection.user": "test-connector",
@@ -19,6 +19,10 @@
     "insert.mode": "upsert",
     "batch.size": "1",
     "auto.create": "true",
-    "auto.evolve": "true"
+    "auto.evolve": "true",
+    "transforms": "routeTopic",
+    "transforms.routeTopic.regex": "(.*)\\.C__CFLTUSER\\.(.*)",
+    "transforms.routeTopic.replacement": "\\$2\\.\\$3",
+    "transforms.routeTopic.type": "org.apache.kafka.connect.transforms.RegexRouter"
   }
 }
