@@ -8,7 +8,7 @@
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "errors.log.enable": "true",
     "errors.log.include.messages": "true",
-    "database.hostname": "ec2-54-154-253-214.eu-west-1.compute.amazonaws.com",
+    "database.hostname": "XXXXXXXX",
     "database.port": "1521",
     "database.user": "c##cfltuser",
     "database.password": "My_RandomPass192837465",
