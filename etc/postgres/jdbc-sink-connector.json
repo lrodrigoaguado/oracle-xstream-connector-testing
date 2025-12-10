@@ -1,0 +1,24 @@
+{
+  "name": "JdbcSinkConnectorConnector_0",
+  "config": {
+    "name": "JdbcSinkConnectorConnector_0",
+    "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "errors.retry.timeout": "6",
+    "errors.retry.delay.max.ms": "3000",
+    "errors.tolerance": "all",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "topics": ".*CFLTUSER.*",
+    "errors.deadletterqueue.topic.name": "DLQ",
+    "connection.url": "jdbc:postgresql://postgres:5432/test-connector",
+    "connection.user": "test-connector",
+    "connection.password": "test-connector",
+    "dialect.name": "PostgreSqlDatabaseDialect",
+    "insert.mode": "upsert",
+    "batch.size": "1",
+    "auto.create": "true",
+    "auto.evolve": "true"
+  }
+}
