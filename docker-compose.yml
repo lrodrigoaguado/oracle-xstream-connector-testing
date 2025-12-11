@@ -104,7 +104,6 @@ services:
       KAFKA_CONFLUENT_CONSUMER_LAG_EMITTER_ENABLED: "true"
 
 
-
   schema-registry:
     image: confluentinc/cp-schema-registry:7.9.5
     hostname: schema-registry
@@ -135,6 +134,7 @@ services:
       - "8083:8083"
     volumes:
       - ./etc/confluentinc-kafka-connect-jdbc-10.9.1.zip:/tmp/confluentinc-kafka-connect-jdbc-10.9.1.zip
+      - ./etc/postgres/postgresql-42.7.8.jar:/usr/share/java/postgresql-42.7.8.jar
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'broker1:29092'
       CONNECT_REST_ADVERTISED_HOST_NAME: connect
@@ -158,13 +158,12 @@ services:
       CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "true"
       CONNECT_PLUGIN_DISCOVERY: "only_scan"
-
     command:
       - bash
       - -c
       - |
         echo "Installing Connector"
-        confluent-hub install --no-prompt confluentinc/kafka-connect-oracle-xstream-cdc-source:1.2.0
+        confluent-hub install --no-prompt confluentinc/kafka-connect-oracle-xstream-cdc-source:1.3.0
         cp /usr/lib/oracle/23/client64/lib/*.jar /usr/share/confluent-hub-components/confluentinc-kafka-connect-oracle-xstream-cdc-source/lib/
         confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:latest
         cp /usr/lib/oracle/23/client64/lib/*.jar /usr/share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/
@@ -248,3 +247,23 @@ services:
       KAFKA_REST_BOOTSTRAP_SERVERS: 'broker1:29092'
       KAFKA_REST_LISTENERS: "http://0.0.0.0:8082"
       KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_DB: test-connector
+      POSTGRES_USER: test-connector
+      POSTGRES_PASSWORD: test-connector
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # Custom entrypoint to always (re)apply init.sql on container start.
+    entrypoint: ["bash","-c","/usr/local/bin/docker-entrypoint.sh postgres & pid=$!; echo 'Waiting for Postgres...'; until pg_isready -U test-connector >/dev/null 2>&1; do sleep 1; done; echo 'Applying init.sql'; psql -U test-connector -d test-connector -f /docker-entrypoint-initdb.d/init.sql || echo 'init.sql apply finished'; wait $pid"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test-connector"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped

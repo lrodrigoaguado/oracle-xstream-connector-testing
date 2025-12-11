@@ -2,6 +2,10 @@
 
 A comprehensive testing environment for the **Confluent Oracle XStream CDC Source Connector**, enabling real-time change data capture (CDC) from Oracle Database to Apache Kafka.
 
+## 📋 Disclaimer
+
+The code and/or instructions here available are NOT intended for production usage. It's only meant to serve as an example or reference and does not replace the need to follow actual and official documentation of referenced products.
+
 ## 📋 Overview
 
 This project provides a complete infrastructure for testing the Oracle XStream CDC Connector with various database changes and configurations. It combines:
@@ -119,6 +123,8 @@ docker ps
 tail -f /var/log/script_debug.log
 ```
 
+Starting and configuring the Oracle database may take several minutes.
+
 **Verify Oracle is healthy:**
 
 ```bash
@@ -144,7 +150,7 @@ docker exec -it oracle-xe sqlplus system/Welcome1@localhost:1521/XEPDB1
 
 ```bash
 # Start all services
-docker-compose up -d --build
+docker-compose up -d --build. --force-recreate
 
 # Monitor startup
 docker-compose logs -f
@@ -211,35 +217,45 @@ Expected output:
 
 ### 3.1 Update Connector Configuration
 
-Edit `etc/xstream-connector-config.json` with your Oracle database details:
+Use the `xstream-source-connector.json.template` to generate a `etc/xstream-connector-config.json` file with your Oracle database details:
 
 ```json
 {
   "name": "OracleXStreamSourceConnector",
   "config": {
+    "name": "OracleXStreamSourceConnector",
     "connector.class": "io.confluent.connect.oracle.xstream.cdc.OracleXStreamSourceConnector",
     "tasks.max": "1",
-
-    "database.hostname": "<EC2_PUBLIC_DNS>",
-    "database.port": "1521",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8081",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "database.hostname": "XXXXX",
+    "database.port": "YYYY",
     "database.user": "c##cfltuser",
     "database.password": "My_RandomPass192837465",
     "database.dbname": "XE",
     "database.service.name": "XE",
     "database.pdb.name": "XEPDB1",
     "database.out.server.name": "XOUT",
-
+    "database.processor.licenses": "1",
+    "decimal.handling.mode": "double",
     "topic.prefix": "xstream",
-    "table.include.list": "TESTING[.].*",
-
+    "table.include.list": "C##CFLTUSER[.].*",
     "schema.history.internal.kafka.topic": "__orcl-schema-changes.XEPDB1",
     "schema.history.internal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092",
-
-    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-
-    "errors.log.enable": "true",
-    "errors.log.include.messages": "true"
+    "schema.history.internal.skip.unparseable.ddl": "true",
+    "schema.history.internal.store.only.captured.tables.ddl": "true",
+    "skipped.operations": "none",
+    "time.precision.mode" : "connect",
+    "transforms": "flatten",
+    "transforms.flatten.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.flatten.drop.tombstones": "false",
+    "transforms.flatten.delete.handling.mode": "none",
+    "transforms.flatten.delete.tombstone.handling.mode": "tombstone",
+    "transforms.flatten.add.fields.prefix": "db_"
   }
 }
 ```
@@ -255,7 +271,7 @@ Edit `etc/xstream-connector-config.json` with your Oracle database details:
 # Deploy connector via REST API
 curl -X POST http://localhost:8083/connectors \
   -H "Content-Type: application/json" \
-  -d @etc/xstream-connector-config.json
+  -d @etc/xstream-source-connector.json
 ```
 
 ### 3.3 Monitor Connector Status
@@ -291,6 +307,22 @@ Expected output:
 docker logs connect | grep -i oracle
 ```
 
+And now deploy the sink connectors that will write the data to the Postgres database:
+
+```bash
+# Deploy connector via REST API
+curl -X POST http://localhost:8083/connectors \
+  -H "Content-Type: application/json" \
+  -d @etc/postgres/jdbc-sink-connector.json
+```
+
+```bash
+# Deploy connector via REST API
+curl -X POST http://localhost:8083/connectors \
+  -H "Content-Type: application/json" \
+  -d @etc/postgres/jdbc-sink-blob-connector.json
+```
+
 **In Control Center:**
 
 1. Navigate to **Connect** → **connect-default**
@@ -310,15 +342,17 @@ docker logs connect | grep -i oracle
 
 ### 4.1 Create a Test Table
 
-Connect to Oracle and create a table in the `TESTING` schema:
+Connect to Oracle and create a table in the `C##CFLTUSER` schema. For that, you can log into the EC2 instance with:
 
 ```bash
 # SSH to EC2 instance
 ssh -i ~/.ssh/your-key.pem ec2-user@<EC2_PUBLIC_IP>
 
 # Connect to Oracle as TESTING user
-docker exec -it oracle-xe sqlplus testing/password@localhost:1521/XEPDB1
+docker exec -it oracle-xe sqlplus C##CFLTUSER/My_RandomPass192837465@localhost:1521/XEPDB1
 ```
+
+or use a Database Manager of your choice (such as DBeaver) and connect remotely.
 
 ```sql
 -- Create a sample table
@@ -376,7 +410,7 @@ Check in Control Center that the update was correctly detected and published in 
 DELETE FROM C##CFLTUSER.EMPLOYEES WHERE EMPLOYEE_ID = 3;
 
 COMMIT;
-```∫
+```
 
 ### 4.6 Monitor in Control Center
 
