@@ -1,23 +1,25 @@
 {
-  "name": "JdbcSinkConnectorConnector_0",
+  "name": "JdbcSinkConnectorConnector_1",
   "config": {
-    "name": "JdbcSinkConnectorConnector_0",
+    "name": "JdbcSinkConnectorConnector_1",
     "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
-    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8081",
     "value.converter": "io.confluent.connect.avro.AvroConverter",
-    "value.converter.schema.registry.url": "http://localhost:8081",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
     "errors.retry.timeout": "6",
     "errors.retry.delay.max.ms": "3000",
     "errors.tolerance": "all",
     "errors.log.enable": "true",
     "errors.log.include.messages": "true",
-    "topics": "xstream.C__CFLTUSER.EMPLOYEES",
+    "topics": "xstream.C__CFLTUSER.DATA_TYPES_TEST",
     "errors.deadletterqueue.topic.name": "DLQ",
     "connection.url": "jdbc:postgresql://postgres:5432/test-connector",
     "connection.user": "test-connector",
     "connection.password": "test-connector",
     "dialect.name": "PostgreSqlDatabaseDialect",
     "insert.mode": "upsert",
+    "delete.enabled": "true",
     "batch.size": "1",
     "auto.create": "true",
     "auto.evolve": "true",
@@ -26,6 +28,6 @@
     "transforms.routeTopic.replacement": "$2",
     "transforms.routeTopic.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "pk.mode": "record_key",
-    "pk.fields": "EMPLOYEE_ID"
+    "pk.fields": "ID"
   }
 }
