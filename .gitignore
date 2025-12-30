@@ -27,4 +27,4 @@ crash.log
 sshkey*
 
 
-*connector.json
+etc/**/*connector.json
