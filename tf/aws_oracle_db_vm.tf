@@ -199,8 +199,9 @@ resource "aws_instance" "oracle_instance" {
 
     docker exec -i oracle-xe sqlplus /nolog <<SQL
     CONNECT sys/Welcome1 AS SYSDBA
-    ALTER SESSION SET CONTAINER = XEPDB1;
-    GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER TO c##cfltuser;
+    CREATE USER c##cfltuser IDENTIFIED BY My_RandomPass192837465 DEFAULT TABLESPACE xstream_adm_tbs QUOTA UNLIMITED ON xstream_adm_tbs CONTAINER=ALL;
+    GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER, SET CONTAINER, SELECT_CATALOG_ROLE TO c##cfltuser CONTAINER=ALL;
+    GRANT FLASHBACK ANY TABLE, SELECT ANY TABLE, LOCK ANY TABLE TO c##cfltuser CONTAINER=ALL;
     GRANT UNLIMITED TABLESPACE TO c##cfltuser;
     ALTER USER c##cfltuser QUOTA UNLIMITED ON USERS;
     EXIT;
@@ -209,13 +210,6 @@ resource "aws_instance" "oracle_instance" {
     log "Create COMMON XStream user"
     docker exec -i oracle-xe sqlplus /nolog <<SQL
     CONNECT sys/Welcome1 AS SYSDBA
-    CREATE USER c##cfltuser IDENTIFIED BY My_RandomPass192837465 DEFAULT TABLESPACE xstream_adm_tbs QUOTA UNLIMITED ON xstream_adm_tbs CONTAINER=ALL;
-
-    GRANT CREATE SESSION, SET CONTAINER, SELECT_CATALOG_ROLE TO c##cfltuser CONTAINER=ALL;
-    GRANT FLASHBACK ANY TABLE, SELECT ANY TABLE, LOCK ANY TABLE TO c##cfltuser CONTAINER=ALL;
-    GRANT CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER TO c##cfltuser CONTAINER=ALL;
-    GRANT UNLIMITED TABLESPACE TO C##CFLTUSER;
-    ALTER USER C##CFLTUSER QUOTA UNLIMITED ON USERS;
 
     BEGIN
       DBMS_XSTREAM_AUTH.GRANT_ADMIN_PRIVILEGE(
@@ -237,7 +231,10 @@ resource "aws_instance" "oracle_instance" {
       schemas DBMS_UTILITY.UNCL_ARRAY;
     BEGIN
       tables(1) := 'C##CFLTUSER.EMPLOYEES';
-      tables(2) := NULL;
+      tables(2) := 'C##CFLTUSER.DATA_TYPES_TEST';
+      tables(3) := 'C##CFLTUSER.DEPARTMENTS';
+      tables(4) := 'C##CFLTUSER.JOBS';
+      tables(5) := NULL;
       schemas(1) := 'C##CFLTUSER';
       schemas(2) := NULL;
       DBMS_XSTREAM_ADM.CREATE_OUTBOUND(
