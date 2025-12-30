@@ -6,6 +6,10 @@ A comprehensive testing environment for the **Confluent Oracle XStream CDC Sourc
 
 The code and/or instructions here available are NOT intended for production usage. It's only meant to serve as an example or reference and does not replace the need to follow actual and official documentation of referenced products.
 
+## 📋 Overview
+
+The code and/or instructions here available are NOT intended for production usage. It's only meant to serve as an example or reference and does not replace the need to follow actual and official documentation of referenced products.
+
 ---
 
 ## 🏗️ Pre-requisites: Installation & Deployment
@@ -33,7 +37,53 @@ The deployment of the database will take several minutes. You can check the stat
 tail -f /var/log/script_debug.log
 ```
 
-the installation will have finished when you can read the message `[XSTREAM] Oracle XE with XStream configured successfully`
+Starting and configuring the Oracle database may take several minutes.
+
+**Verify Oracle is healthy:**
+
+```bash
+# Check container health
+docker inspect oracle-xe | grep -A 5 Health
+
+# Connect to Oracle
+docker exec -it oracle-xe sqlplus system/Welcome1@localhost:1521/XEPDB1
+```
+
+> [!IMPORTANT]
+> The Oracle database is configured with:
+> - **SYS password**: `Welcome1`
+> - **XStream user**: `c##cfltuser` / `My_RandomPass192837465`
+> - **Test schema**: `TESTING` (password: `password`)
+> - **Outbound server**: `XOUT`
+
+---
+
+## 🐳 Step 2: Start Local Confluent Platform
+
+### 2.1 Start the Cluster
+
+```bash
+# Start all services
+docker-compose up -d --build. --force-recreate
+
+# Monitor startup
+docker-compose logs -f
+```
+
+The Connect image requires Oracle Instant Client libraries, and so uses a modified version of the original cp-connect base image. This Dockerfile:
+- Starts from `confluentinc/cp-server-connect:7.9.5`
+- Installs `libaio` (required by Oracle client)
+- Installs Oracle Instant Client 23.26.0.0
+
+**Startup sequence:**
+1. Brokers initialize in KRaft mode (combined broker/controller)
+2. Schema Registry connects to brokers
+3. Connect worker starts and installs Oracle XStream connector
+4. Control Center, Prometheus, and Alertmanager start
+
+> **⏱️ Startup Time**: Approximately 2-3 minutes
+
+### 2.3 Verify Cluster Health
 
 ### 0.2 Start Confluent Platform (Local)
 Start the local Kafka ecosystem (Brokers, Connect, Schema Registry, Control Center) using Docker Compose.
@@ -58,22 +108,51 @@ curl -X POST http://localhost:8083/connectors \
 
 ---
 
-## 🧪 Use Case 1: Basic Data Flow
+## 🔌 Step 3: Deploy and Configure the Connector
 
-This use case validates the core CDC functionality: capturing DML, DDL, and handling complex data types. All scripts for this use case are located in `scripts/setup/` and `scripts/use_case_1/`.
+### 3.1 Update Connector Configuration
 
-### 1.1 Setup & Initialization
-Establish the baseline state by creating the `EMPLOYEES` table and seeding initial data.
+Use the `xstream-source-connector.json.template` to generate a `etc/xstream-connector-config.json` file with your Oracle database details:
 
-1.  **Create Table**: Run `scripts/setup/01_create_tables.sql`
-2.  **Insert Data**: Run `scripts/setup/02_insert_data.sql`
-
-<details>
-<summary><b>How to run the SQL scripts</b></summary>
-
-You can run the scripts in the Oracle database by logging into the EC2 instance and then into the Oracle container by running:
-```bash
-docker exec -it oracle-xe-21c /bin/bash
+```json
+{
+  "name": "OracleXStreamSourceConnector",
+  "config": {
+    "name": "OracleXStreamSourceConnector",
+    "connector.class": "io.confluent.connect.oracle.xstream.cdc.OracleXStreamSourceConnector",
+    "tasks.max": "1",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8081",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "database.hostname": "XXXXX",
+    "database.port": "YYYY",
+    "database.user": "c##cfltuser",
+    "database.password": "My_RandomPass192837465",
+    "database.dbname": "XE",
+    "database.service.name": "XE",
+    "database.pdb.name": "XEPDB1",
+    "database.out.server.name": "XOUT",
+    "database.processor.licenses": "1",
+    "decimal.handling.mode": "double",
+    "topic.prefix": "xstream",
+    "table.include.list": "C##CFLTUSER[.].*",
+    "schema.history.internal.kafka.topic": "__orcl-schema-changes.XEPDB1",
+    "schema.history.internal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092",
+    "schema.history.internal.skip.unparseable.ddl": "true",
+    "schema.history.internal.store.only.captured.tables.ddl": "true",
+    "skipped.operations": "none",
+    "time.precision.mode" : "connect",
+    "transforms": "flatten",
+    "transforms.flatten.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.flatten.drop.tombstones": "false",
+    "transforms.flatten.delete.handling.mode": "none",
+    "transforms.flatten.delete.tombstone.handling.mode": "tombstone",
+    "transforms.flatten.add.fields.prefix": "db_"
+  }
+}
 ```
 or simply by using a DB management tool, such as DBeaver and connecting remotely to the Oracle XE instance.
 </details>
@@ -83,7 +162,7 @@ And deploy the JDBC Sink connector that will replicate the database into the loc
 ```bash
 curl -X POST http://localhost:8083/connectors \
   -H "Content-Type: application/json" \
-  -d @etc/postgres/jdbc-sink-connector.json
+  -d @etc/xstream-source-connector.json
 ```
 
 *Verification*: Check the topic `xstream.C__CFLTUSER.EMPLOYEES` in Control Center. You should see the initial records. And you can use the same DB management tool to connect to the local Postgres instance and verify that the data has been replicated using the following connection data:
@@ -102,7 +181,71 @@ Test that standard row modifications are captured.
 1.  **Update**: Run `scripts/use_case_1/01_update.sql`
 2.  **Delete**: Run `scripts/use_case_1/02_delete.sql`
 
-*Verification*: Observe the *UPDATE* and *DELETE* events in the `EMPLOYEES` topic.
+```bash
+docker logs connect | grep -i oracle
+```
+
+And now deploy the sink connectors that will write the data to the Postgres database:
+
+```bash
+# Deploy connector via REST API
+curl -X POST http://localhost:8083/connectors \
+  -H "Content-Type: application/json" \
+  -d @etc/postgres/jdbc-sink-connector.json
+```
+
+```bash
+# Deploy connector via REST API
+curl -X POST http://localhost:8083/connectors \
+  -H "Content-Type: application/json" \
+  -d @etc/postgres/jdbc-sink-blob-connector.json
+```
+
+**In Control Center:**
+
+1. Navigate to **Connect** → **connect-default**
+2. Click on **OracleXStreamSourceConnector**
+3. View **Status**, **Configuration**, and **Tasks**
+
+> [!WARNING]
+> If the connector shows `FAILED` state, common issues include:
+> - Incorrect database hostname/credentials
+> - Network connectivity issues (check security groups)
+> - XStream server not properly configured
+> - Missing Oracle client libraries
+
+---
+
+## 📊 Step 4: Test Data Flow
+
+### 4.1 Create a Test Table
+
+Connect to Oracle and create a table in the `C##CFLTUSER` schema. For that, you can log into the EC2 instance with:
+
+```bash
+# SSH to EC2 instance
+ssh -i ~/.ssh/your-key.pem ec2-user@<EC2_PUBLIC_IP>
+
+# Connect to Oracle as TESTING user
+docker exec -it oracle-xe sqlplus C##CFLTUSER/My_RandomPass192837465@localhost:1521/XEPDB1
+```
+
+or use a Database Manager of your choice (such as DBeaver) and connect remotely.
+
+```sql
+-- Create a sample table
+CREATE TABLE C##CFLTUSER.EMPLOYEES (
+    EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
+    FIRST_NAME VARCHAR2(50),
+    LAST_NAME VARCHAR2(50),
+    EMAIL VARCHAR2(100),
+    HIRE_DATE DATE,
+    SALARY NUMBER(8,2),
+    DEPARTMENT VARCHAR2(50)
+);
+```
+
+### 4.2 Insert Test Data
 
 ### 1.3 Schema Evolution (DDL)
 Test the connector's ability to handle schema changes.
@@ -149,7 +292,8 @@ The connector identifies the Unique Index and uses it to populate the Kafka reco
 1. **Table**: `DEPARTMENTS` (No PK, but with a Unique Index) already created in the `scripts/setup/01_create_tables.sql`.
 2. **Operations**: `scripts/use_case_2/01_operations.sql` (Upserts)
 
-Check that the three rows in the `DEPARTMENTS` Oracle table have been correctly replicated to Postgres. You can also check the messages in the `xstream.C__CFLTUSER.DEPARTMENTS` topic in Control Center and see that they do have a key.
+COMMIT;
+```
 
 1. **Deletes:** `scripts/use_case_2/02_deletes.sql` (Deletes).
 

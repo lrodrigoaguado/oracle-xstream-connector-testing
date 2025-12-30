@@ -34,6 +34,7 @@
     "transforms.flatten.drop.tombstones": "false",
     "transforms.flatten.delete.handling.mode": "none",
     "transforms.flatten.delete.tombstone.handling.mode": "tombstone",
-    "transforms.flatten.add.fields.prefix": "db_"
+    "transforms.flatten.add.fields": "source.ts_ms:CDCTIMESTAMP,source.db:MAQUINA_ID",
+    "transforms.flatten.add.fields.prefix": ""
   }
 }

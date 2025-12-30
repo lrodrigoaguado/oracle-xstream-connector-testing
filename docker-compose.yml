@@ -257,7 +257,7 @@ services:
       POSTGRES_PASSWORD: test-connector
     ports:
       - "5432:5432"
-    entrypoint: ["bash","-c","/usr/local/bin/docker-entrypoint.sh postgres & pid=$!; echo 'Waiting for Postgres...'; until pg_isready -U test-connector >/dev/null 2>&1; do sleep 1; done; wait $pid"]
+    entrypoint: ["bash","-c","/usr/local/bin/docker-entrypoint.sh postgres & pid=$!; echo 'Waiting for Postgres...'; until pg_isready -U test-connector >/dev/null 2>&1; do sleep 1; done; echo 'Applying init.sql'; psql -U test-connector -d test-connector -f /docker-entrypoint-initdb.d/init.sql || echo 'init.sql apply finished'; wait $pid"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U test-connector"]
       interval: 5s
