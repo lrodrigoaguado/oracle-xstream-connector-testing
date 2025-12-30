@@ -1,0 +1,6 @@
+-- Update a record
+UPDATE C##CFLTUSER.EMPLOYEES
+SET SALARY = 80000.00, DEPARTMENT = 'Senior Engineering'
+WHERE EMPLOYEE_ID = 1;
+
+COMMIT;
