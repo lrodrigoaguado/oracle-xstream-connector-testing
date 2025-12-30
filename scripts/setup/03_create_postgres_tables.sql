@@ -1,0 +1,21 @@
+-- Postgres Setup for Use Case 4: Referential Integrity
+-- Using quoted identifiers to match Oracle's uppercase naming convention and JDBC Sink defaults.
+
+-- Create CUSTOMERS table (Parent)
+CREATE TABLE "CUSTOMERS" (
+    "CUSTOMER_ID" INT PRIMARY KEY,
+    "CUSTOMER_NAME" VARCHAR(100) NOT NULL,
+    "EMAIL" VARCHAR(100)
+);
+
+-- Create ORDERS table (Child) with Deferrable Constraint
+CREATE TABLE "ORDERS" (
+    "ORDER_ID" INT PRIMARY KEY,
+    "ORDER_DATE" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CUSTOMER_ID" INT,
+    "TOTAL_AMOUNT" DECIMAL(10, 2),
+    CONSTRAINT "FK_ORDERS_CUSTOMERS"
+        FOREIGN KEY ("CUSTOMER_ID")
+        REFERENCES "CUSTOMERS"("CUSTOMER_ID")
+        DEFERRABLE INITIALLY DEFERRED
+);
