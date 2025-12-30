@@ -6,623 +6,235 @@ A comprehensive testing environment for the **Confluent Oracle XStream CDC Sourc
 
 The code and/or instructions here available are NOT intended for production usage. It's only meant to serve as an example or reference and does not replace the need to follow actual and official documentation of referenced products.
 
-## 📋 Overview
-
-This project provides a complete infrastructure for testing the Oracle XStream CDC Connector with various database changes and configurations. It combines:
-
-- **☁️ AWS-hosted Oracle Database** - Deployed via Terraform with XStream Out configured
-- **🐳 Local Confluent Platform** - Full-featured Kafka cluster running in Docker Compose
-- **🔌 Oracle XStream CDC Connector** - Pre-configured to capture database changes in real-time
-
-### Architecture
-
-```mermaid
-graph LR
-    A[Oracle DB<br/>AWS EC2] -->|XStream Out| B[Kafka Connect<br/>Docker]
-    B -->|CDC Events| C[Kafka Brokers<br/>3-node cluster]
-    C --> D[Control Center<br/>Next Gen]
-    F[SQL Client] -->|DML/DDL| A
-
-    style A fill:#f96,stroke:#333,stroke-width:2px
-    style B fill:#6c9,stroke:#333,stroke-width:2px
-    style C fill:#69f,stroke:#333,stroke-width:2px
-```
-
 ---
 
-## 🎯 Objectives
+## 🏗️ Pre-requisites: Installation & Deployment
 
-This environment enables you to:
+This section covers the end-to-end setup of the environment, comprising the AWS-hosted Oracle Database and the local Confluent Platform.
 
-1. **Test CDC Capabilities** - Validate how different database operations (INSERT, UPDATE, DELETE, DDL) are captured and streamed to Kafka
-2. **Edge Case Testing** - Experiment with complex scenarios like schema changes, large transactions, and data type variations
-3. **Configuration Validation** - Test different connector configurations and observe their behavior
-4. **Performance Analysis** - Monitor throughput, latency, and resource utilization using Control Center Next Gen
-5. **Integration Testing** - Validate end-to-end data flow from Oracle to downstream consumers
-
----
-
-## 🏗️ Infrastructure Components
-
-### AWS Infrastructure (Terraform)
-
-| Component | Description | Configuration |
-|-----------|-------------|---------------|
-| **Oracle Database** | Oracle XE 21c running in Docker on EC2 | t3.large instance with 30GB storage |
-| **VPC & Networking** | Isolated network with public subnet | CIDR: 10.0.0.0/16 |
-| **Security Groups** | Firewall rules for SSH, Oracle, and EM Express | Ports: 22, 1521, 5500 |
-| **XStream Configuration** | Pre-configured outbound server | Server name: `XOUT` |
-
-### Local Confluent Platform (Docker Compose)
-
-| Service | Image | Ports | Purpose |
-|---------|-------|-------|---------|
-| **Broker 1-3** | cp-server:7.9.5 | 9092, 9094, 9095 | 3-node KRaft cluster (combined broker/controller) |
-| **Schema Registry** | cp-schema-registry:7.9.5 | 8081 | Avro/JSON schema management |
-| **Kafka Connect** | Custom (with Oracle libs) | 8083 | Runs Oracle XStream CDC connector |
-| **Control Center** | cp-enterprise-control-center-next-gen:2.2.0 | 9021 | Monitoring and management UI |
-| **REST Proxy** | cp-kafka-rest:7.9.5 | 8082 | HTTP interface to Kafka |
-| **Prometheus** | cp-enterprise-prometheus:2.2.0 | 9090 | Metrics collection |
-| **Alertmanager** | cp-enterprise-alertmanager:2.2.0 | 9093 | Alert management |
-
----
-
-## 📦 Prerequisites
-
-Before you begin, ensure you have:
-
-- **AWS Account** with appropriate permissions
-- **AWS CLI** configured with credentials
-- **Terraform** >= 1.0
-- **Docker** and **Docker Compose** installed locally
-- **SSH key pair** for EC2 access
-
----
-
-## 🚀 Step 1: Deploy Oracle Database in AWS
-
-### 1.1 Configure Terraform Variables
-
-Navigate to the Terraform directory and update the `variables.tf` file with your configuration for the Oracle deployment on AWS
-
-### 1.2 Initialize and Deploy
+### 0.1 Deploy Oracle Database (AWS)
+Navigate to the `tf/` directory and use Terraform to provision the Oracle XE 21c instance on AWS EC2.
 
 ```bash
-# Initialize Terraform
 terraform -chdir=tf init
-
-# Review the execution plan
-terraform -chdir=tf plan
-
-# Deploy the infrastructure
-terraform -chdir=tf apply
+terraform -chdir=tf apply --auto-approve
 ```
+> **Note**: This process creates an EC2 instance, configures networking, and starts an Oracle XE container with XStream Out configured.
 
-> **⏱️ Deployment Time**: Approximately 10-15 minutes
-
-### 1.3 Verify Oracle Database
-
-Once deployment completes, Terraform will output connection details:
-
+After completion, note the outputs:
 ```bash
-# View outputs
 terraform -chdir=tf output oracle_vm_db_details
 terraform -chdir=tf output oracle_xstream_connector
 ```
 
-**Connect to the EC2 instance:**
+The deployment of the database will take several minutes. You can check the status by logging into the EC2 instance, and running:
 
 ```bash
-# SSH into the instance (replace with your key and public IP)
-ssh -i ~/.ssh/your-key.pem ec2-user@<EC2_PUBLIC_IP>
-
-# Check Oracle container status
-docker ps
-
-# View setup logs
 tail -f /var/log/script_debug.log
 ```
 
-Starting and configuring the Oracle database may take several minutes.
+the installation will have finished when you can read the message `[XSTREAM] Oracle XE with XStream configured successfully`
 
-**Verify Oracle is healthy:**
-
-```bash
-# Check container health
-docker inspect oracle-xe | grep -A 5 Health
-
-# Connect to Oracle
-docker exec -it oracle-xe sqlplus system/Welcome1@localhost:1521/XEPDB1
-```
-
-> [!IMPORTANT]
-> The Oracle database is configured with:
-> - **SYS password**: `Welcome1`
-> - **XStream user**: `c##cfltuser` / `My_RandomPass192837465`
-> - **Test schema**: `TESTING` (password: `password`)
-> - **Outbound server**: `XOUT`
-
----
-
-## 🐳 Step 2: Start Local Confluent Platform
-
-### 2.1 Start the Cluster
+### 0.2 Start Confluent Platform (Local)
+Start the local Kafka ecosystem (Brokers, Connect, Schema Registry, Control Center) using Docker Compose.
 
 ```bash
-# Start all services
-docker-compose up -d --build. --force-recreate
-
-# Monitor startup
-docker-compose logs -f
+docker-compose up -d --build --force-recreate
 ```
+> After some moments you will be able to access the Control Center at `http://localhost:9021` and verify that all services are healthy.
 
-The Connect image requires Oracle Instant Client libraries, and so uses a modified version of the original cp-connect base image. This Dockerfile:
-- Starts from `confluentinc/cp-server-connect:7.9.5`
-- Installs `libaio` (required by Oracle client)
-- Installs Oracle Instant Client 23.26.0.0
+### 0.3 Deploy the Connector
+Instantiate the Oracle XStream Source Connector using the details from the Terraform output.
 
-**Startup sequence:**
-1. Brokers initialize in KRaft mode (combined broker/controller)
-2. Schema Registry connects to brokers
-3. Connect worker starts and installs Oracle XStream connector
-4. Control Center, Prometheus, and Alertmanager start
-
-> **⏱️ Startup Time**: Approximately 2-3 minutes
-
-### 2.3 Verify Cluster Health
-
-**Check service status:**
+1.  Generate your config file from the template `etc/xstream-source-connector.json.template` -> `etc/xstream-source-connector.json`.
+2.  Fill in the `database.hostname`, `database.port`, and other details from step 1.
+3.  Deploy via REST API:
 
 ```bash
-# View all containers
-docker-compose ps
-
-# All services should show "Up" status
-```
-
-**Access Control Center:**
-
-Open your browser to [http://localhost:9021](http://localhost:9021)
-
-- Navigate to **Cluster Overview** - verify 3 brokers are healthy
-- Check **Topics** - internal topics should be created
-- View **Connect** - worker should be registered
-
-**Verify Connect plugins:**
-
-```bash
-# List installed connectors
-curl -s http://localhost:8083/connector-plugins | jq '.[] | select(.class | contains("Oracle"))'
-```
-
-Expected output:
-```json
-{
-  "class": "io.confluent.connect.oracle.xstream.cdc.OracleXStreamSourceConnector",
-  "type": "source",
-  "version": "1.2.0"
-}
-```
-
-> [!TIP]
-> If Connect fails to start, check logs:
-> ```bash
-> docker logs connect
-> ```
-> Common issues: Oracle libraries not found, insufficient memory
-
----
-
-## 🔌 Step 3: Deploy and Configure the Connector
-
-### 3.1 Update Connector Configuration
-
-Use the `xstream-source-connector.json.template` to generate a `etc/xstream-connector-config.json` file with your Oracle database details:
-
-```json
-{
-  "name": "OracleXStreamSourceConnector",
-  "config": {
-    "name": "OracleXStreamSourceConnector",
-    "connector.class": "io.confluent.connect.oracle.xstream.cdc.OracleXStreamSourceConnector",
-    "tasks.max": "1",
-    "key.converter": "io.confluent.connect.avro.AvroConverter",
-    "key.converter.schema.registry.url": "http://schema-registry:8081",
-    "value.converter": "io.confluent.connect.avro.AvroConverter",
-    "value.converter.schema.registry.url": "http://schema-registry:8081",
-    "errors.log.enable": "true",
-    "errors.log.include.messages": "true",
-    "database.hostname": "XXXXX",
-    "database.port": "YYYY",
-    "database.user": "c##cfltuser",
-    "database.password": "My_RandomPass192837465",
-    "database.dbname": "XE",
-    "database.service.name": "XE",
-    "database.pdb.name": "XEPDB1",
-    "database.out.server.name": "XOUT",
-    "database.processor.licenses": "1",
-    "decimal.handling.mode": "double",
-    "topic.prefix": "xstream",
-    "table.include.list": "C##CFLTUSER[.].*",
-    "schema.history.internal.kafka.topic": "__orcl-schema-changes.XEPDB1",
-    "schema.history.internal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092",
-    "schema.history.internal.skip.unparseable.ddl": "true",
-    "schema.history.internal.store.only.captured.tables.ddl": "true",
-    "skipped.operations": "none",
-    "time.precision.mode" : "connect",
-    "transforms": "flatten",
-    "transforms.flatten.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.flatten.drop.tombstones": "false",
-    "transforms.flatten.delete.handling.mode": "none",
-    "transforms.flatten.delete.tombstone.handling.mode": "tombstone",
-    "transforms.flatten.add.fields.prefix": "db_"
-  }
-}
-```
-
-> **🔑 Get EC2 Public DNS:**
-> ```bash
-> terraform -chdir=tf output oracle_xstream_connector
-> ```
-
-### 3.2 Deploy the Connector
-
-```bash
-# Deploy connector via REST API
 curl -X POST http://localhost:8083/connectors \
   -H "Content-Type: application/json" \
   -d @etc/xstream-source-connector.json
 ```
 
-### 3.3 Monitor Connector Status
+---
 
-**Check connector status:**
+## 🧪 Use Case 1: Basic Data Flow
+
+This use case validates the core CDC functionality: capturing DML, DDL, and handling complex data types. All scripts for this use case are located in `scripts/setup/` and `scripts/use_case_1/`.
+
+### 1.1 Setup & Initialization
+Establish the baseline state by creating the `EMPLOYEES` table and seeding initial data.
+
+1.  **Create Table**: Run `scripts/setup/01_create_tables.sql`
+2.  **Insert Data**: Run `scripts/setup/02_insert_data.sql`
+
+<details>
+<summary><b>How to run the SQL scripts</b></summary>
+
+You can run the scripts in the Oracle database by logging into the EC2 instance and then into the Oracle container by running:
+```bash
+docker exec -it oracle-xe-21c /bin/bash
+```
+or simply by using a DB management tool, such as DBeaver and connecting remotely to the Oracle XE instance.
+</details>
+
+And deploy the JDBC Sink connector that will replicate the database into the local Postgres instance:
 
 ```bash
-# View connector status
-curl -s http://localhost:8083/connectors/OracleXStreamSourceConnector/status | jq
-```
-
-Expected output:
-```json
-{
-  "name": "OracleXStreamSourceConnector",
-  "connector": {
-    "state": "RUNNING",
-    "worker_id": "connect:8083"
-  },
-  "tasks": [
-    {
-      "id": 0,
-      "state": "RUNNING",
-      "worker_id": "connect:8083"
-    }
-  ]
-}
-```
-
-**View connector logs:**
-
-```bash
-docker logs connect | grep -i oracle
-```
-
-And now deploy the sink connectors that will write the data to the Postgres database:
-
-```bash
-# Deploy connector via REST API
 curl -X POST http://localhost:8083/connectors \
   -H "Content-Type: application/json" \
   -d @etc/postgres/jdbc-sink-connector.json
 ```
 
+*Verification*: Check the topic `xstream.C__CFLTUSER.EMPLOYEES` in Control Center. You should see the initial records. And you can use the same DB management tool to connect to the local Postgres instance and verify that the data has been replicated using the following connection data:
+
 ```bash
-# Deploy connector via REST API
-curl -X POST http://localhost:8083/connectors \
-  -H "Content-Type: application/json" \
-  -d @etc/postgres/jdbc-sink-blob-connector.json
+host: localhost
+port: 5432
+database: test-connector
+user: test-connector
+password: test-connector
 ```
 
-**In Control Center:**
+### 1.2 DML Operations (Update & Delete)
+Test that standard row modifications are captured.
 
-1. Navigate to **Connect** → **connect-default**
-2. Click on **OracleXStreamSourceConnector**
-3. View **Status**, **Configuration**, and **Tasks**
+1.  **Update**: Run `scripts/use_case_1/01_update.sql`
+2.  **Delete**: Run `scripts/use_case_1/02_delete.sql`
+
+*Verification*: Observe the *UPDATE* and *DELETE* events in the `EMPLOYEES` topic.
+
+### 1.3 Schema Evolution (DDL)
+Test the connector's ability to handle schema changes.
+
+1.  **Add Column**: Run `scripts/use_case_1/03_schema_changes.sql`
+
+*Verification*: Check the `__orcl-schema-changes` topic and subsequent messages in the main topic to see the new `PHONE_NUMBER` field.
+
+### 1.4 Complex Data Types & Limitations (XMLType, LONG)
+This scenario tests `CLOB`, `BLOB`, `XMLType`, and `LONG` data types.
+**Run Script**: `scripts/use_case_1/04_complex_types.sql`
+
+#### 🔑 Key Configurations
+- **Source**: Standard configuration.
+- **Oracle DB**: Includes a `BEFORE INSERT OR UPDATE` trigger to copy `XMLTYPE` to `CLOB`.
+- **Sink**: Standard JDBC Sink with `pk.mode: record_value` (default for PK tables).
+
+#### ⚠️ Important Caveats regarding Oracle Technologies
+Please note that the following limitations are inherent to the **Oracle Database** and **Oracle XStream API** technologies, not the Confluent Connector itself.
 
 > [!WARNING]
-> If the connector shows `FAILED` state, common issues include:
-> - Incorrect database hostname/credentials
-> - Network connectivity issues (check security groups)
-> - XStream server not properly configured
-> - Missing Oracle client libraries
+> **LONG Columns**:
+> * **Limitation**: Oracle Database **does not support Supplemental Logging for `LONG` columns**.
+> * **Impact**: Since XStream relies on redo logs and supplemental logging to construct Logical Change Records (LCRs), it is technically impossible for the capture process to retrieve the `LONG` value for every change.
+> * **Result**: The `LONG_COL` field will appear in the Kafka message but will likely be null or empty.
+> * **Recommendation**: Convert legacy `LONG` columns to `CLOB` or `NCLOB` in your database design.
+
+> [!TIP]
+> **XMLType Columns**:
+> * **Limitation**: Native XStream capture of `XMLTYPE` can be inconsistent depending on storage (Binary XML vs CLOB) and internal filtering.
+> * **Workaround Implemented**: The script `04_complex_types.sql` creates a **Trigger** (`trg_data_types_test`) that automatically copies the `XMLTYPE` column into a `CLOB` column (`XML_COL_CLOB`) whenever a row is changed.
+> * **Result**: You will see your XML data reliably captured in the `XML_COL_CLOB` field in Kafka.
 
 ---
 
-## 📊 Step 4: Test Data Flow
+## 🧪 Use Case 2: No-PK with Unique Index (Auto-Key Derivation)
 
-### 4.1 Create a Test Table
+This use case demonstrates how the connector can automatically derive the Kafka key from an Oracle **Unique Index** when a Primary Key is missing. This is the recommended approach when you can modify the database schema.
 
-Connect to Oracle and create a table in the `C##CFLTUSER` schema. For that, you can log into the EC2 instance with:
+### 2.1 Overview
+The connector identifies the Unique Index and uses it to populate the Kafka record key. This allows for full CDC support, including **Deletes**, without any SMT configuration.
 
-```bash
-# SSH to EC2 instance
-ssh -i ~/.ssh/your-key.pem ec2-user@<EC2_PUBLIC_IP>
+### 2.2 Setup & Data
+1. **Table**: `DEPARTMENTS` (No PK, but with a Unique Index) already created in the `scripts/setup/01_create_tables.sql`.
+2. **Operations**: `scripts/use_case_2/01_operations.sql` (Upserts)
 
-# Connect to Oracle as TESTING user
-docker exec -it oracle-xe sqlplus C##CFLTUSER/My_RandomPass192837465@localhost:1521/XEPDB1
-```
+Check that the three rows in the `DEPARTMENTS` Oracle table have been correctly replicated to Postgres. You can also check the messages in the `xstream.C__CFLTUSER.DEPARTMENTS` topic in Control Center and see that they do have a key.
 
-or use a Database Manager of your choice (such as DBeaver) and connect remotely.
+1. **Deletes:** `scripts/use_case_2/02_deletes.sql` (Deletes).
 
-```sql
--- Create a sample table
-CREATE TABLE C##CFLTUSER.EMPLOYEES (
-    EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
-    FIRST_NAME VARCHAR2(50),
-    LAST_NAME VARCHAR2(50),
-    EMAIL VARCHAR2(100),
-    HIRE_DATE DATE,
-    SALARY NUMBER(8,2),
-    DEPARTMENT VARCHAR2(50)
-);
-```
-
-### 4.2 Insert Test Data
-
-```sql
--- Insert sample records
-INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
-(1, 'John', 'Doe', 'john.doe@example.com', SYSDATE, 75000.00, 'Engineering');
-
-INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
-(2, 'Jane', 'Smith', 'jane.smith@example.com', SYSDATE, 82000.00, 'Marketing');
-
-INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
-(3, 'Bob', 'Johnson', 'bob.johnson@example.com', SYSDATE, 68000.00, 'Sales');
-
--- Commit the transaction
-COMMIT;
-```
-
-### 4.3 Verify Data in Kafka
-
-Connect to Control Center and check the list of topics. A new topic called xstream.C__CFLTUSER.EMPLOYEES should have appeared a three new messages should be there.
-
-### 4.4 Test UPDATE Operations
-
-```sql
--- Update a record
-UPDATE C##CFLTUSER.EMPLOYEES
-SET SALARY = 80000.00, DEPARTMENT = 'Senior Engineering'
-WHERE EMPLOYEE_ID = 1;
-
-COMMIT;
-```
-
-**Verify in Kafka:**
-
-Check in Control Center that the update was correctly detected and published in the corresponding topic.
-
-### 4.5 Test DELETE Operations
-
-```sql
--- Delete a record
-DELETE FROM C##CFLTUSER.EMPLOYEES WHERE EMPLOYEE_ID = 3;
-
-COMMIT;
-```
-
-### 4.6 Monitor in Control Center
-
-1. Open [http://localhost:9021](http://localhost:9021)
-2. Navigate to **Topics** → `xstream.C__CFLTUSER.EMPLOYEES`
-3. Click **Messages** to view CDC events in real-time
-4. Observe:
-   - Message throughput
-   - Schema evolution
-   - Partition distribution
-   - Consumer lag (if you have consumers)
+### 2.3 🔑 Key Configurations
+- **Source**: No `message.key.columns` needed for this table; the connector derives the key from the unique index.
+- **Sink**: `pk.mode: record_key` and `delete.enabled: true`.
 
 ---
 
-## 🧪 Advanced Testing Scenarios
+## 🧪 Use Case 3: No-PK and no Unique Index (with Deletes)
 
-### Schema Changes (DDL)
+This use case addresses the limitation of Use Case 2 by extracting a Key from the record value at the source, allowing full CDC support (including deletes).
 
-```sql
--- Add a new column
-ALTER TABLE C##CFLTUSER.EMPLOYEES ADD (PHONE_NUMBER VARCHAR2(20));
+### 3.1 Overview
 
--- Insert data with new column
-INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
-(4, 'Alice', 'Williams', 'alice@example.com', SYSDATE,
- 90000.00, 'Engineering', '555-1234');
-COMMIT;
-```
+To support deletes for tables without Primary Keys, we use the connector's native **Key Extraction** on a `NOT NULL` column in the database to produce a clean, non-nullable key.
 
-Check the schema history topic:
-```bash
-docker exec -it broker1 kafka-console-consumer \
-  --bootstrap-server broker1:29092 \
-  --topic __orcl-schema-changes.XEPDB1 \
-  --from-beginning
-```
+> [!IMPORTANT]
+> **Schema Tip**: To avoid Avro "union" wrappers (like `{"string": "..."}`) in your Kafka keys, ensure the source column is defined as **`NOT NULL`** in Oracle.
 
-### Bulk Operations
+### 3.2 🔑 Key Configurations
+- **Source**:
+  - `message.key.columns`: Defines `JOB_ID` as the key.
+- **Sink**: `pk.mode: record_key` and `delete.enabled: true`.
 
-```sql
--- Insert 1000 records
-BEGIN
-  FOR i IN 1..1000 LOOP
-    INSERT INTO C##CFLTUSER.EMPLOYEES VALUES
-    (i+100, 'User'||i, 'Test'||i, 'user'||i||'@test.com',
-     SYSDATE, 50000 + (i*100), 'Department'||MOD(i,5));
-  END LOOP;
-  COMMIT;
-END;
-/
-```
+### 3.3 Setup & Data
 
-Monitor throughput in Control Center.
+1. **Table**: `JOBS` (No PK) already created in the `scripts/setup/01_create_tables.sql`.
+2. **Operations**: `scripts/use_case_3/01_operations.sql`.
 
-### Complex Data Types
+You should be able to see four rows in the `JOBS` table in Postgres, one of them having `JOB_ID = 'AD_VP'` and `MAX_SALARY = 35000`.
 
-```sql
--- Create table with various data types
-CREATE TABLE C##CFLTUSER.DATA_TYPES_TEST (
-    ID NUMBER PRIMARY KEY,
-    TEXT_COL VARCHAR2(100),
-    NUMBER_COL NUMBER(10,2),
-    DATE_COL DATE,
-    TIMESTAMP_COL TIMESTAMP,
-    CLOB_COL CLOB,
-    BLOB_COL BLOB
-);
+1. **Deletes**: `scripts/use_case_3/02_deletes.sql` (Deletes).
 
--- Insert test data
-INSERT INTO C##CFLTUSER.DATA_TYPES_TEST VALUES (
-    1,
-    'Sample Text',
-    12345.67,
-    SYSDATE,
-    SYSTIMESTAMP,
-    TO_CLOB('Large text content...'),
-    HEXTORAW('DEADBEEF')
-);
-COMMIT;
-```
+Now the row with `JOB_ID = 'ST_CLERK'` should dissapear from Postgres.
+
+### 3.4 🔑 Key Configurations
+The process relies on the capability of the Source connector to generate a Key for the messages from the message values using the `message.key.columns` configuration.
 
 ---
 
-## 📈 Monitoring and Troubleshooting
+## 🧪 Use Case 4: Referential Integrity (Smart Retries & Deferrable Constraints)
 
-### Key Metrics to Monitor
+This use case demonstrates how to handle complex relationships between tables (Foreign Keys) to ensure data consistency in the target system, even when updates to different tables arrive asynchronously in Kafka.
 
-| Metric | Location | What to Watch |
-|--------|----------|---------------|
-| **Connector Status** | Control Center → Connect | Should be `RUNNING` |
-| **Task Status** | Connect REST API | All tasks `RUNNING` |
-| **Source Records** | Control Center → Connector Metrics | Increasing count |
-| **Broker Throughput** | Control Center → Brokers | Messages/sec |
-| **Consumer Lag** | Control Center → Consumers | Should be near zero |
+### 4.1 The Three Pillars of Referential Integrity CDC
 
-### Common Issues
+To handle FK constraints between `CUSTOMERS` (Parent) and `ORDERS` (Child), we implement three key strategies:
 
-#### Connector Fails to Start
+#### Pillar A: Smart Connector Retries
+We configure the JDBC Sink to handle transient FK violations (e.g., when a child record arrives before its parent).
+- **`tasks.max > 1`**: Essential so one task can continue processing the Parent topic while another is retrying the Child.
+- **`max.retries`**: Set high (e.g., 10+).
+- **`retry.backoff.ms`**: Set to 3000ms. This creates a ~30-second window for the parent record to arrive and be processed.
 
-```bash
-# Check Connect logs
-docker logs connect | tail -100
+#### Pillar B: Deferrable Constraints
 
-# Common causes:
-# - Oracle libraries missing: Rebuild Docker image
-# - Network issues: Check security groups allow port 1521
-# - Credentials wrong: Verify in terraform.tfvars
-```
+Both Oracle and Postgres are configured with **Deferrable Constraints** (`DEFERRABLE INITIALLY DEFERRED`).
+- This allows the database to skip constraint validation until the transaction `COMMIT`.
+- In the JDBC Sink, which processes in batches, this allows parent and child records within the same batch to be inserted in any order.
 
-#### No Messages in Kafka
+#### Pillar C: Dead Letter Queue (DLQ)
 
-```bash
-# Verify XStream is capturing
-docker exec -it oracle-xe sqlplus sys/Welcome1 as sysdba
+For permanent failures (e.g., data truly missing from source), we use a DLQ to prevent the pipeline from crashing.
+- **`errors.deadletterqueue.topic.name`**: `dlq_oracle_sink`
+- **`errors.tolerance`**: `all`
 
-SELECT CAPTURE_NAME, STATE, TOTAL_MESSAGES_CAPTURED
-FROM V$XSTREAM_CAPTURE;
+### 4.2 Setup & Data
 
-# If TOTAL_MESSAGES_CAPTURED is 0, check:
-# - Table matches include regex: TESTING[.].*
-# - Supplemental logging enabled
-# - Transactions are committed
-```
+1. **Oracle Table**: `CUSTOMERS` and `ORDERS` (created in `scripts/setup/01_create_tables.sql`).
+2. **Postgres Table**: Run `scripts/setup/03_create_postgres_tables.sql` in your local Postgres.
+3. **Operations**: `scripts/use_case_4/01_operations.sql` (Inserts/Updates) and `scripts/use_case_4/02_deletes.sql` (Deletes).
 
-#### Performance Issues
+### 4.3 🔑 Key Configurations
 
-```sql
--- Check XStream lag
-SELECT APPLY_NAME,
-       APPLY_TIME,
-       APPLIED_MESSAGE_NUMBER,
-       APPLIED_MESSAGE_CREATE_TIME
-FROM DBA_XSTREAM_APPLY;
+The effectiveness of this use case relies on how the following properties interact to manage the "gap" between parent and child availability:
 
--- If lag is high:
--- - Increase tasks.max in connector config
--- - Add more Connect workers
--- - Optimize Oracle performance
-```
-
-### Useful Commands
-
-```bash
-# Restart connector
-curl -X POST http://localhost:8083/connectors/OracleXStreamSourceConnector/restart
-
-# Delete connector
-curl -X DELETE http://localhost:8083/connectors/OracleXStreamSourceConnector
-
-# View Connect worker config
-curl -s http://localhost:8083/ | jq
-
-# Check broker health
-docker exec broker1 kafka-broker-api-versions \
-  --bootstrap-server broker1:29092
-
-# View all topics
-docker exec broker1 kafka-topics \
-  --bootstrap-server broker1:29092 --list
-```
-
----
+- **`tasks.max: 4`**: By increasing the number of tasks, we ensure that if one task get stuck retrying an `ORDERS` record (waiting for a FK), other tasks are free to continue pulling `CUSTOMERS` records from Kafka. Without multiple tasks, a single retry loop could block the entire pipeline.
+- **`max.retries: 30` & `retry.backoff.ms: 2000`**: Together, these properties define a **60-second recovery window** (30 retries * 2s). This is the maximum time a "child" record will wait for its "parent" to arrive in Postgres before giving up.
+- **`errors.tolerance: all`**: This is a safety net. It tells the connector "if a record still fails after all 30 retries, do not stop the connector; instead, follow the error handling policy (the DLQ)".
+- **`errors.deadletterqueue.topic.name: SINK_DLQ`**: Any record that exceeds the 60-second retry window is routed here. This allows you to inspect the failed data (e.g., an order for a customer that was never created in the source) and manually reprocess it later without interrupting the main data flow.
 
 ## 🧹 Cleanup
 
-### Stop Local Environment
-
 ```bash
-# Stop all containers
-docker-compose down
-
-# Remove volumes (WARNING: deletes all data)
-docker-compose down -v
-
-# Remove custom image
-docker rmi custom-connect:latest
+docker compose down -v
+terraform -chdir=tf destroy --auto-approve
 ```
-
-### Destroy AWS Infrastructure
-
-```bash
-cd tf
-
-# Destroy all AWS resources
-terraform destroy
-
-# Confirm with: yes
-```
-
-> [!CAUTION]
-> This will permanently delete the Oracle database and all data!
-
----
-
-## 📚 Additional Resources
-
-### Documentation
-
-- [Oracle XStream CDC Connector Documentation](https://docs.confluent.io/kafka-connectors/oracle-xstream/current/overview.html)
-- [Oracle XStream Concepts](https://docs.oracle.com/en/database/oracle/oracle-database/21/xstrm/)
-- [Confluent Platform Documentation](https://docs.confluent.io/platform/current/overview.html)
-- [Control Center Next Gen](https://docs.confluent.io/platform/current/control-center/index.html)
-
-### Configuration Reference
-
-- **Connector Properties**: See [etc/xstream-connector-config.json](etc/xstream-connector-config.json)
-- **Terraform Variables**: See [tf/variables.tf](tf/variables.tf)
-- **Docker Compose**: See [docker-compose.yml](docker-compose.yml)
-
-
----
-
-## 📝 License
-
-This project is provided as-is for testing and educational purposes.
