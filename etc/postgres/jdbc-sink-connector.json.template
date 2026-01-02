@@ -1,7 +1,7 @@
 {
-  "name": "JdbcSinkConnectorConnector_0",
+  "name": "JdbcSinkConnector",
   "config": {
-    "name": "JdbcSinkConnectorConnector_0",
+    "name": "JdbcSinkConnector",
     "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
     "tasks.max": "4",
     "key.converter": "io.confluent.connect.avro.AvroConverter",
@@ -13,10 +13,10 @@
     "errors.tolerance": "all",
     "errors.log.enable": "true",
     "errors.log.include.messages": "true",
-    "topics": "xstream.C__CFLTUSER.EMPLOYEES,xstream.C__CFLTUSER.DATA_TYPES_TEST,xstream.C__CFLTUSER.DEPARTMENTS,xstream.C__CFLTUSER.JOBS,xstream.C__CFLTUSER.CUSTOMERS,xstream.C__CFLTUSER.ORDERS",
+    "topics": "xstream.DEMO.EMPLOYEES,xstream.DEMO.DATA_TYPES_TEST,xstream.DEMO.DEPARTMENTS,xstream.DEMO.JOBS,xstream.DEMO.CUSTOMERS,xstream.DEMO.ORDERS",
     "max.retries": "30",
     "retry.backoff.ms": "2000",
-    "errors.deadletterqueue.topic.name": "SINK_DLQ",
+    "errors.deadletterqueue.topic.name": "JDBC_SINK_DLQ",
     "errors.deadletterqueue.context.headers.enable": "true",
     "connection.url": "jdbc:postgresql://postgres:5432/test-connector",
     "connection.user": "test-connector",
@@ -27,10 +27,12 @@
     "batch.size": "1",
     "auto.create": "true",
     "auto.evolve": "true",
-    "transforms": "routeTopic",
-    "transforms.routeTopic.regex": "(.*)\\.C__CFLTUSER\\.(.*)",
+    "transforms": "routeTopic,insertTS",
+    "transforms.routeTopic.regex": "(.*)\\.DEMO\\.(.*)",
     "transforms.routeTopic.replacement": "$2",
     "transforms.routeTopic.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.insertTS.type": "org.apache.kafka.connect.transforms.InsertField$Value",
+    "transforms.insertTS.timestamp.field": "SINKTIMESTAMP",
     "pk.mode": "record_key"
   }
 }

@@ -102,7 +102,6 @@ resource "aws_instance" "oracle_instance" {
     echo "Oracle folder created. Installing updates..." >> /var/log/script_debug.log
 
     # Update system and install Docker
-    dnf update -y
     dnf install -y docker
 
     echo "Docker installed. Starting docker..." >> /var/log/script_debug.log
@@ -179,31 +178,21 @@ resource "aws_instance" "oracle_instance" {
     EXIT;
     SQL
 
-    log "Create CDB XStream tablespaces"
+    log "Create XStream user"
     docker exec -i oracle-xe sqlplus /nolog <<SQL
     CONNECT sys/Welcome1 AS SYSDBA
-    CREATE TABLESPACE xstream_adm_tbs DATAFILE '/opt/oracle/oradata/XE/xstream_adm_tbs.dbf' SIZE 25M AUTOEXTEND ON;
-    CREATE TABLESPACE xstream_tbs DATAFILE '/opt/oracle/oradata/XE/xstream_tbs.dbf' SIZE 25M AUTOEXTEND ON;
+    CREATE USER c##cfltuser IDENTIFIED BY My_RandomPass192837465 DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS CONTAINER=ALL;
+    GRANT CREATE SESSION, SET CONTAINER, SELECT_CATALOG_ROLE TO c##cfltuser CONTAINER=ALL;
+    GRANT SELECT ANY TABLE, FLASHBACK ANY TABLE, LOCK ANY TABLE TO c##cfltuser CONTAINER=ALL;
     EXIT;
     SQL
 
-    log "Create PDB tablespaces and sample user"
+    log "Create Demo user"
     docker exec -i oracle-xe sqlplus /nolog <<SQL
     CONNECT sys/Welcome1 AS SYSDBA
-    ALTER SESSION SET CONTAINER=XEPDB1;
-
-    CREATE TABLESPACE xstream_adm_tbs DATAFILE '/opt/oracle/oradata/XE/XEPDB1/xstream_adm_tbs.dbf' SIZE 25M AUTOEXTEND ON;
-    CREATE TABLESPACE xstream_tbs DATAFILE '/opt/oracle/oradata/XE/XEPDB1/xstream_tbs.dbf' SIZE 25M AUTOEXTEND ON;
-    EXIT;
-    SQL
-
-    docker exec -i oracle-xe sqlplus /nolog <<SQL
-    CONNECT sys/Welcome1 AS SYSDBA
-    CREATE USER c##cfltuser IDENTIFIED BY My_RandomPass192837465 DEFAULT TABLESPACE xstream_adm_tbs QUOTA UNLIMITED ON xstream_adm_tbs CONTAINER=ALL;
-    GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER, SET CONTAINER, SELECT_CATALOG_ROLE TO c##cfltuser CONTAINER=ALL;
-    GRANT FLASHBACK ANY TABLE, SELECT ANY TABLE, LOCK ANY TABLE TO c##cfltuser CONTAINER=ALL;
-    GRANT UNLIMITED TABLESPACE TO c##cfltuser;
-    ALTER USER c##cfltuser QUOTA UNLIMITED ON USERS;
+    ALTER SESSION SET CONTAINER = XEPDB1;
+    CREATE USER demo IDENTIFIED BY DemoPass123 DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS;
+    GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER TO demo;
     EXIT;
     SQL
 
@@ -218,6 +207,9 @@ resource "aws_instance" "oracle_instance" {
         grant_select_privileges => TRUE,
         container => 'ALL'
       );
+
+      EXECUTE IMMEDIATE 'GRANT SELECT ON DBA_INDEXES TO c##cfltuser CONTAINER=ALL';
+      EXECUTE IMMEDIATE 'GRANT SELECT ON DBA_IND_COLUMNS TO c##cfltuser CONTAINER=ALL';
     END;
     /
     EXIT;
@@ -230,19 +222,39 @@ resource "aws_instance" "oracle_instance" {
       tables DBMS_UTILITY.UNCL_ARRAY;
       schemas DBMS_UTILITY.UNCL_ARRAY;
     BEGIN
-      tables(1) := 'C##CFLTUSER.EMPLOYEES';
-      tables(2) := 'C##CFLTUSER.DATA_TYPES_TEST';
-      tables(3) := 'C##CFLTUSER.DEPARTMENTS';
-      tables(4) := 'C##CFLTUSER.JOBS';
-      tables(5) := NULL;
-      schemas(1) := 'C##CFLTUSER';
+      tables(1) := 'DEMO.EMPLOYEES';
+      tables(2) := 'DEMO.DATA_TYPES_TEST';
+      tables(3) := 'DEMO.DEPARTMENTS';
+      tables(4) := 'DEMO.JOBS';
+      tables(5) := 'DEMO.CUSTOMERS';
+      tables(6) := 'DEMO.ORDERS';
+      tables(7) := NULL;
+      schemas(1) := 'DEMO';
       schemas(2) := NULL;
+
       DBMS_XSTREAM_ADM.CREATE_OUTBOUND(
-        server_name => 'XOUT',
-        source_container_name => 'XEPDB1',
-        table_names => tables,
-        schema_names => schemas
-      );
+        capture_name          =>  'CONFLUENT_XOUT1',
+        server_name           =>  'XOUT',
+        source_container_name =>  'XEPDB1',
+        table_names           =>  tables,
+        schema_names          =>  schemas,
+        comment               => 'Confluent XStream CDC Connector' );
+
+      DBMS_CAPTURE_ADM.ALTER_CAPTURE(
+        capture_name => 'CONFLUENT_XOUT1',
+        checkpoint_retention_time => 1);
+
+      DBMS_XSTREAM_ADM.SET_PARAMETER(
+        streams_type => 'capture',
+        streams_name => 'CONFLUENT_XOUT1',
+        parameter    => 'max_sga_size',
+        value        => '256');
+
+      DBMS_XSTREAM_ADM.SET_PARAMETER(
+        streams_type => 'apply',
+        streams_name => 'XOUT',
+        parameter    => 'max_sga_size',
+        value        => '256');
     END;
     /
     EXEC DBMS_XSTREAM_ADM.ALTER_OUTBOUND(server_name=>'XOUT', connect_user=>'c##cfltuser');
@@ -260,7 +272,7 @@ resource "aws_instance" "oracle_instance" {
   EOF
 
   tags = {
-    Name        = "${var.prefix}-oracle-xe"
+    Name = "${var.prefix}-oracle-xe"
   }
 }
 
