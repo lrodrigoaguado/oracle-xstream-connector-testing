@@ -39,7 +39,7 @@ terraform -chdir=tf apply --auto-approve
 tail -f /var/log/script_debug.log
 ```
 
-The installation will have finished when you can read the message `[XSTREAM] Oracle XE with XStream configured successfully`
+The installation will have finished when you can read the message `[XSTREAM] Oracle XE with XStream configured successfully` and prepare to be patient as it may take some minutes to deploy and configure everything.
 
 ### 0.2 Start Confluent Platform (Local)
 
@@ -54,7 +54,7 @@ chmod +x start_local_environment.sh
 
 ### 0.3 Deploy the Source Connector
 
-Once the Oracle database is up and configured, run the script
+Make sure both the Oracle database is 100% ready and the local environment is working. Then, run the script
 
 ```shell
 chmod +x deploy_source_connector.sh
