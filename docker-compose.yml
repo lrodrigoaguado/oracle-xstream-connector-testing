@@ -119,6 +119,42 @@ services:
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'broker1:29092'
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
 
+  oracle:
+    image: container-registry.oracle.com/database/express:21.3.0-xe
+    hostname: oracle
+    container_name: oracle-xe
+    ports:
+      - "1521:1521"
+      - "5500:5500"
+    environment:
+      - ORACLE_PWD=Welcome1
+      - ORACLE_CHARACTERSET=AL32UTF8
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      - ./bin/01_setup_oracle_xstream.sh:/opt/oracle/setup-xstream.sh
+    healthcheck:
+      test: ["CMD", "sqlplus", "-L", "system/Welcome1@//localhost:1521/XEPDB1", "select", "1", "from", "dual"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  oracle-init:
+    image: docker:cli
+    container_name: oracle-init
+    depends_on:
+      oracle:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh -c "
+      echo 'Waiting for oracle service...';
+      sleep 10;
+      echo 'Running setup script inside oracle-xe container...';
+      docker exec oracle-xe /bin/bash /opt/oracle/setup-xstream.sh
+      "
+
   connect:
     build:
       context: .
@@ -130,6 +166,7 @@ services:
       - broker2
       - broker3
       - schema-registry
+      - oracle
     ports:
       - "8083:8083"
     volumes:
@@ -231,22 +268,8 @@ services:
       CONTROL_CENTER_ALERTMANAGER_CONFIG_FILE: /mnt/config/alertmanager-generated.yml
       CONTROL_CENTER_REST_LISTENERS: "http://0.0.0.0:9021"
 
-  rest-proxy:
-    image: confluentinc/cp-kafka-rest:7.9.5
-    depends_on:
-      - broker1
-      - broker2
-      - broker3
-      - schema-registry
-    ports:
-      - 8082:8082
-    hostname: rest-proxy
-    container_name: rest-proxy
-    environment:
-      KAFKA_REST_HOST_NAME: rest-proxy
-      KAFKA_REST_BOOTSTRAP_SERVERS: 'broker1:29092'
-      KAFKA_REST_LISTENERS: "http://0.0.0.0:8082"
-      KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+
+
 
   postgres:
     image: postgres:16
@@ -264,3 +287,6 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+
+volumes:
+  oracle_data:

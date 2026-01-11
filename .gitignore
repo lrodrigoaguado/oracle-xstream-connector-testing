@@ -27,5 +27,4 @@ crash.log
 sshkey*
 
 
-etc/**/*connector.json
 etc/oracle*.rpm

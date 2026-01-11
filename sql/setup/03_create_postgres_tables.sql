@@ -1,3 +1,11 @@
+-- Drop existing tables for idempotency
+DROP TABLE IF EXISTS "ORDERS" CASCADE;
+DROP TABLE IF EXISTS "CUSTOMERS" CASCADE;
+DROP TABLE IF EXISTS "EMPLOYEES" CASCADE;
+DROP TABLE IF EXISTS "DEPARTMENTS" CASCADE;
+DROP TABLE IF EXISTS "JOBS" CASCADE;
+DROP TABLE IF EXISTS "DATA_TYPES_TEST" CASCADE;
+
 -- Postgres Setup for Use Case 4: Referential Integrity
 -- Using quoted identifiers to match Oracle's uppercase naming convention and JDBC Sink defaults.
 

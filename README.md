@@ -8,164 +8,130 @@ The code and/or instructions here available are NOT intended for production usag
 
 ---
 
-## 🏗️ Pre-requisites: Installation & Deployment
+## 🏗️ Quick Start
 
-This section covers the end-to-end setup of the environment, comprising the AWS-hosted Oracle Database and the local Confluent Platform.
+This guide will get you up and running in **under 10 minutes**.
 
-### 0.0 Download Oracle Instant Client
+### Prerequisites
 
-Due to redistribution restrictions, you must manually download the Oracle Instant Client Basic RPM and place it in the `etc/` folder.
+1.  **Docker Desktop** (with Docker Compose v2+).
 
-1. Download the **Oracle Instant Client Basic (RPM)** for Linux x86-64 (or aarch64 if running on ARM) from the [Oracle Website](https://www.oracle.com/database/technologies/instant-client/downloads.html).
+### Step 1: Download Oracle Drivers
 
-   * Example: `oracle-instantclient-basic-23.26.0.0.0-1.el8.aarch64.rpm`
+Due to redistribution restrictions, you must manually download the Oracle Instant Client Basic RPM and place it in the etc/ folder.
 
-2. Place the downloaded `.rpm` file in the `etc/` directory of this repository.
+1. Go to the [Oracle Instant Client Downloads](https://www.oracle.com/database/technologies/instant-client/downloads.html) page.
+2. Download the **Basic** RPM for your architecture (e.g., `oracle-instantclient-basic-21.x-1.x86_64.rpm`).
+3. Place the `.rpm` file in the `etc/` folder of this project.
 
-### 0.1 Deploy Oracle Database (AWS)
+### Step 2: Start the Local Environment
 
-Navigate to the `tf/` directory and use Terraform to provision the Oracle XE 21c instance on AWS EC2.
-
-```bash
-terraform -chdir=tf init
-terraform -chdir=tf apply --auto-approve
-```
-
-> **Note**: This process creates an EC2 instance, configures networking, and starts an Oracle XE container with XStream Out configured.
-> Once the Oracle database is deployed in the EC2 instance, the script will output the connection details, which will be used to configure the Oracle XStream Source Connector.
-> The configuration of the Oracle XStream Server will still take several minutes. You can check the status by logging into the EC2 instance, and running:
+Run the following script to start the entire Docker environment (Kafka, Oracle, Postgres, Connect, etc.):
 
 ```bash
-tail -f /var/log/script_debug.log
+./00_start_local_environment.sh
 ```
 
-The installation will have finished when you can read the message `[XSTREAM] Oracle XE with XStream configured successfully`
-
-### 0.2 Start Confluent Platform (Local)
-
-Start the local Kafka ecosystem (Brokers, Connect, Schema Registry, Control Center) using the provided start script. This script will automatically detect the Oracle RPM in the `etc/` folder and update the `Dockerfile` accordingly.
+The containers will start up quickly, but the deployment of the XStream Out server and capture process may take a few minutes.. Please, check the initialization by running:
 
 ```bash
-chmod +x start_local_environment.sh
-./start_local_environment.sh
+docker logs -f oracle-init
 ```
 
-> After some moments you will be able to access the Control Center at `http://localhost:9021` and verify that all services are healthy.
+and wait until you see the message:
 
-### 0.3 Deploy the Source Connector
-
-Once the Oracle database is up and configured, run the script
-
-```shell
-chmod +x deploy_source_connector.sh
-./deploy_source_connector.sh
+```bash
+================================================================================
+>> [XSTREAM SETUP] XStream setup completed successfully.
+================================================================================
 ```
 
-to automatically deploy the Oracle XStream Source Connector using the details from the Terraform output.
+### Step 3: Verify and Initialize Oracle
 
-### 0.4 Deploy the Sink Connector
+1. **Verify Oracle Status**: Run the verification script to confirm the database and XStream are configured correctly.
 
-Run the script
+   ```bash
+   ./bin/02_verify_oracle_status.sh
+   ```
 
-```shell
-chmod +x deploy_sink_connector.sh
-./deploy_sink_connector.sh
+   You should see: `✅ SYSTEM IS READY FOR DEMO`.
+
+2. **Initialize the Databases**:
+   > [!IMPORTANT]
+   > **CRITICAL STEP**: This **MUST** be run before deploying the connectors. The connector caches table metadata at startup; if the tables skip this step, the Sink Connector will fail due to missing keys.
+
+   ```bash
+   ./bin/03_initialize_databases.sh
+   ```
+
+### Step 4: Deploy the Connectors
+
+Deploy both the Source and Sink connectors:
+
+```bash
+./bin/04_deploy_connectors.sh
 ```
 
-to automatically deploy the JDBC Sink connector that will write the changes from the Oracle XStream Source Connector to the local Postgres instance.
+### Step 5: Access the UI
+
+You can access the Confluent Control Center at <http://localhost:9021> and check that all resources are up and running and you have both connectors (`OracleXStreamSourceConnector` and `JdbcSinkConnector`) in a `Running` state.
 
 ---
 
 ## 📊 Monitoring & Metadata Fields
 
-For observability and debugging purposes, the connectors are configured to inject three additional metadata columns into every destination table in Postgres.
+The connectors inject three metadata columns into every destination table in Postgres to help track the replication process:
 
-| Column Name | Type | Origin | Description |
-| :--- | :--- | :--- | :--- |
-| **`MAQUINA_ID`** | String | Source Connector | Represents the source database identifier (e.g., `source.db`). Helpful in multi-tenant or multi-source architectures. |
-| **`SOURCETIMESTAMP`** | Timestamp | Source Connector | The timestamp when the change event occurred in the Oracle database (mapped from `source.ts_ms`). |
-| **`SINKTIMESTAMP`** | Timestamp | Sink Connector | The timestamp when the record was processed by the Sink Connector and written to Postgres. |
-
-### 🔧 How to Remove These Fields
-
-If you wish to remove these fields for a production deployment, modify the connector configuration templates in `etc/`:
-
-1. **Remove `MAQUINA_ID` and `SOURCETIMESTAMP`**:
-   * Edit `etc/xstream-source-connector.json.template`.
-   * Find `transforms.flatten.add.fields`.
-   * Remove `source.db:MAQUINA_ID` and `source.ts_ms:SOURCETIMESTAMP`.
-   * Remove the `convertTS` transform if `SOURCETIMESTAMP` is removed.
-
-2. **Remove `SINKTIMESTAMP`**:
-   * Edit `etc/postgres/jdbc-sink-connector.json.template`.
-   * Remove `insertTS` from the `transforms` list.
-   * Remove the `transforms.insertTS.*` properties.
+| Column Name       | Origin           | Description                                                        |
+| :---------------- | :--------------- | :----------------------------------------------------------------- |
+| `MAQUINA_ID`      | Source Connector | Source database identifier.                                        |
+| `SOURCETIMESTAMP` | Source Connector | Timestamp when the change occurred in Oracle.                      |
+| `SINKTIMESTAMP`   | Sink Connector   | Timestamp when the record was written to Postgres.                 |
 
 ---
 
-## 🧪 Use Case 1: Basic Data Flow
+## 🧪 Use Cases
 
-This use case validates the core CDC functionality: capturing DML, DDL, and handling complex data types. All scripts for this use case are located in `scripts/setup/` and `scripts/use_case_1/`.
+All use cases assume you have completed the **Quick Start** steps (1-6) successfully.
 
-### 1.1 Setup & Initialization
+---
 
-Establish the baseline state by creating the `EMPLOYEES` table and seeding initial data.
+### Use Case 1: Basic Data Flow (DML, DDL, Complex Types)
 
-1. **Create Table**: Run `scripts/setup/01_create_tables.sql`
-2. **Insert Data**: Run `scripts/setup/02_insert_data.sql`
+Captures standard database operations including `UPDATE`, `DELETE`, and schema changes (`DDL`), alongside complex Oracle-specific types like `XMLType`, `CLOB`, and `LONG`.
 
-<details>
-<summary><b>How to run the SQL scripts</b></summary>
-You can run the scripts in the Oracle database by logging into the EC2 instance and then into the Oracle container by running:
+- **Mechanism**: Replicated using the `EMPLOYEE_ID` **Primary Key**.
+- **Oracle Action**: Updates salary, deletes a record, adds a column, and inserts complex types.
 
 ```bash
-docker exec -it oracle-xe-21c /bin/bash
+./bin/05_run_use_case_1.sh
 ```
 
-or simply by using a DB management tool, such as DBeaver and connecting remotely to the Oracle XE instance.
+The script will execute the SQL scripts in the "sql/use_case_1" subfolder, which will perform DML and DDL operations in Oracle and automatically verify replication to Postgres, reporting timing for each step.
 
-</details>
+- **Verification**:
 
-*Verification*: Check the topic `xstream.DEMO.EMPLOYEES` in Control Center. You should see the initial records. And you can use the same DB management tool to connect to the local Postgres instance and verify that the data has been replicated using the following connection data:
+  ```bash
+  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT "FIRST_NAME", "SALARY" FROM EMPLOYEES WHERE "EMPLOYEE_ID" = 1;'
+  ```
 
-```bash
-host: localhost
-port: 5432
-database: test-connector
-user: test-connector
-password: test-connector
-```
+#### 🔑 Use Case 1: Key Connector Parameters
 
-### 1.2 DML Operations (Update & Delete)
+**Source Connector:**
 
-Test that standard row modifications are captured.
+- `io.debezium.transforms.ExtractNewRecordState`: **Crucial SMT (Single Message Transform)**. It flattens the complex Debezium-style structure (which contains `before`, `after`, and `source` metadata) into a simple, flat record. This is essential because the standard JDBC Sink Connector expects a flat message format.
+- `org.apache.kafka.connect.transforms.TimestampConverter`: Used to convert the source timestamp from a raw number to a standard Kafka/Connect **Timestamp** type, ensuring it is correctly created as a `TIMESTAMP` column in Postgres.
+- `decimal.handling.mode: double`: Ensures Oracle numeric types are correctly mapped to double precision in Kafka and Postgres.
+- `table.include.list: DEMO[.].*`: Ensures all tables in the `DEMO` schema are captured.
+- `database.out.server.name: XOUT`: Connects to the specific Oracle XStream Outbound Server.
 
-1. **Update**: Run `scripts/use_case_1/01_update.sql`
-2. **Delete**: Run `scripts/use_case_1/02_delete.sql`
-
-*Verification*: Observe the *UPDATE* and *DELETE* events in the `EMPLOYEES` topic.
-
-### 1.3 Schema Evolution (DDL)
-
-Test the connector's ability to handle schema changes.
-
-1. **Add Column**: Run `scripts/use_case_1/03_schema_changes.sql`
-
-*Verification*: Check the `__orcl-schema-changes` topic and subsequent messages in the main topic to see the new `PHONE_NUMBER` field.
-
-### 1.4 Complex Data Types & Limitations (XMLType, LONG)
-
-This scenario tests `CLOB`, `BLOB`, `XMLType`, and `LONG` data types.
-**Run Script**: `scripts/use_case_1/04_complex_types.sql`
-
-#### 🔑 Key Configurations
-
-| Connector  | Parameter            | Value        | Reason                                                          |
-|:---------- |:-------------------- |:------------ |:--------------------------------------------------------------- |
-| **Source** | `table.include.list` | `DEMO[.].*`  | Captures all tables in the DEMO schema.                         |
-| **Source** | `transforms`         | `flatten`    | Flattens the complex Debezium envelope for simpler consumption. |
-| **Sink**   | `pk.mode`            | `record_key` | Uses the message key (derived from PK) for upserts/deletes.     |
-| **Sink**   | `delete.enabled`     | `true`       | Allows propagation of DELETE operations using the key.          |
+**Sink Connector (Metadata & Routing)**:
+- `org.apache.kafka.connect.transforms.InsertField`: Automatically injects the `SINKTIMESTAMP` into the record as it is written to the database, allowing for end-to-end latency measurement.
+- `org.apache.kafka.connect.transforms.RegexRouter`: Standardizes the destination table names in Postgres by stripping the `xstream.DEMO.` prefix from the Kafka topic names.
+- `insert.mode: upsert`: Required to handle both INSERT and UPDATE operations correctly.
+- `delete.enabled: true`: Combined with the source's `drop.tombstones=false`, this allows DELETEs to propagate to Postgres.
+- `pk.mode: record_key`: Uses the key generated by the source connector as the Primary Key in Postgres.
+- `auto.create: true` & `auto.evolve: true`: Enables the connector to automatically create the destination tables and, more importantly, **evolve the schema** (add columns) when DDL changes occur in Oracle.
 
 #### ⚠️ Important Caveats regarding Oracle Technologies
 
@@ -188,68 +154,88 @@ Please note that the following limitations are inherent to the **Oracle Database
 
 ---
 
-## 🧪 Use Case 2: No-PK with Unique Index (Auto-Key Derivation)
+### Use Case 2: No-PK with Unique Index
 
-This use case demonstrates how the connector can automatically derive the Kafka key from an Oracle **Unique Index** when a Primary Key is missing. This is the recommended approach when you can modify the database schema.
+Handles replication for tables that lack a Primary Key but possess a **Unique Index**, allowing for full `UPDATE` and `DELETE` support.
 
-### 2.1 Overview
+- **Mechanism**: Automatically detects and uses the `DEPT_ID` **Unique Index** as the Kafka message key.
+- **Oracle Action**: Inserts, updates, and deletes records in the `DEPARTMENTS` table.
+- **Table**: `DEPARTMENTS` (Unique Index on `DEPT_ID`).
 
-The connector identifies the Unique Index and uses it to populate the Kafka record key. This allows for full CDC support, including **Deletes**, without any SMT configuration.
+```bash
+./bin/06_run_use_case_2.sh
+```
 
-### 2.2 Setup & Data
+- **Verification**:
 
-1. **Table**: `DEPARTMENTS` (No PK, but with a Unique Index) already created in the `scripts/setup/01_create_tables.sql`.
-2. **Operations**: `scripts/use_case_2/01_operations.sql` (Upserts)
-   Check that the three rows in the `DEPARTMENTS` Oracle table have been correctly replicated to Postgres. You can also check the messages in the `xstream.C__CFLTUSER.DEPARTMENTS` topic in Control Center and see that they do have a key.
-3. **Deletes:** `scripts/use_case_2/02_deletes.sql` (Deletes).
+  ```bash
+  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT * FROM DEPARTMENTS WHERE "DEPT_ID" = 20;'
+  ```
 
-### 2.3 🔑 Key Configurations
+#### 🔑 Use Case 2: Key Connector Parameters
 
-| Connector  | Parameter             | Value                                      | Reason                                                                                                                              |
-|:---------- |:--------------------- |:------------------------------------------ |:----------------------------------------------------------------------------------------------------------------------------------- |
-| **Source** | `message.key.columns` | No reference to DEPARTMENTS table required | **Auto-Detection**: The connector automatically queries `DBA_INDEXES` to find the unique index on `DEPT_ID` and uses it as the key. |
-| **Sink**   | `pk.mode`             | `record_key`                               | Essential. Tells the sink to trust the key provided by the source for identifying rows.                                             |
+**Source Connector:**
+
+- **Automatic Detection**: When the source connector is granted PDB-level access to `SYS.DBA_INDEXES`, it automatically detects unique indexes for tables without primary keys and uses them as the Kafka message key.
+
+**Sink Connector:**
+
+- `pk.mode: record_key`: Essential for mapping the unique-index-based key into a Postgres Primary Key.
+- `delete.enabled: true`: Required to propagate deletes identified by the Unique Index.
 
 ---
 
-## 🧪 Use Case 3: No-PK and no Unique Index (with Deletes)
+### Use Case 3: No-PK (Manual Key Derivation)
 
-This use case addresses the limitation of Use Case 2 by extracting a Key from the record value at the source, allowing full CDC support (including deletes).
+Showcases replication for tables without any PK or Unique Index by manually defining the key in the connector configuration.
 
-### 3.1 Overview
+- **Mechanism**: Uses the `message.key.columns` property to manually assign `JOB_ID` as the replication key.
+- **Oracle Action**: Performs DML operations on the `JOBS` table.
+- **Table**: `JOBS` (No PK, uses `message.key.columns: DEMO.JOBS:JOB_ID`).
 
-To support deletes for tables without Primary Keys, we use the connector's native **Key Extraction** on a `NOT NULL` column in the database to produce a clean, non-nullable key.
+```bash
+./bin/07_run_use_case_3.sh
+```
+
+- **Verification**:
+
+  ```bash
+  docker exec -it postgres psql -U test-connector -d test-connector -c "SELECT * FROM JOBS WHERE \"JOB_ID\" = 'AD_VP';"
+  ```
+
+#### 🔑 Use Case 3: Key Connector Parameters
+
+**Source Connector:**
+
+- `message.key.columns: DEMO.JOBS:JOB_ID;`: Manually instructs the connector to use specific column(s) as the message key for tables lacking both a primary key and a unique index.
 
 > [!IMPORTANT]
 > **Schema Tip**: To avoid Avro "union" wrappers (like `{"string": "..."}`) in your Kafka keys, ensure the source column is defined as **`NOT NULL`** in Oracle.
 
-### 3.2 🔑 Key Configurations
+**Sink Connector:**
 
-- **Source**:
-  - `message.key.columns`: Defines `JOB_ID` as the key.
-- **Sink**: `pk.mode: record_key` and `delete.enabled: true`.
-
-### 3.3 Setup & Data
-
-1. **Table**: `JOBS` (No PK) already created in the `scripts/setup/01_create_tables.sql`.
-2. **Operations**: `scripts/use_case_3/01_operations.sql`.
-   You should be able to see four rows in the `JOBS` table in Postgres, one of them having `JOB_ID = 'AD_VP'` and `MAX_SALARY = 35000`.
-3. **Deletes**: `scripts/use_case_3/02_deletes.sql` (Deletes).
-   Now the row with `JOB_ID = 'ST_CLERK'` should disappear from Postgres.
-
-### 3.4 🔑 Key Configurations
-
-| Connector  | Parameter             | Value              | Reason                                                                                          |
-|:---------- |:--------------------- |:------------------ |:----------------------------------------------------------------------------------------------- |
-| **Source** | `message.key.columns` | `DEMO.JOBS:JOB_ID` | Manually forces the connector to use `JOB_ID` as the key, since there is no PK or Unique Index. |
-| **Sink**   | `pk.mode`             | `record_key`       | Uses the manual key from the source to identify modify/delete targets.                          |
-| **Sink**   | `delete.enabled`      | `true`             | Enables deletes based on the constructed key.                                                   |
+- `pk.mode: record_key`: Maps the manually defined key to the Postgres Primary Key.
+- `delete.enabled: true`: Enables delete support using the manually derived key.
 
 ---
 
-## 🧪 Use Case 4: Referential Integrity (Smart Retries & Deferrable Constraints)
+### Use Case 4: Referential Integrity (Smart Retries)
 
-This use case demonstrates how to handle complex relationships between tables (Foreign Keys) to ensure data consistency in the target system, even when updates to different tables arrive asynchronously in Kafka.
+Demonstrates how to handle **Foreign Key** relationships between parent and child tables, ensuring data consistency even when events arrive out of order.
+
+- **Mechanism**: Combines **Smart Retries** in the Sink Connector with **Deferrable Constraints** in both databases.
+- **Oracle Action**: Inserts parent (`CUSTOMERS`) and child (`ORDERS`) records, followed by coordinated updates and deletes.
+- **Tables**: `CUSTOMERS` (Parent), `ORDERS` (Child).
+
+```bash
+./bin/08_run_use_case_4.sh
+```
+
+- **Verification**:
+
+  ```bash
+  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT c."CUSTOMER_NAME", o."TOTAL_AMOUNT" FROM CUSTOMERS c JOIN ORDERS o ON c."CUSTOMER_ID" = o."CUSTOMER_ID" WHERE c."CUSTOMER_ID" = 1;'
+  ```
 
 ### 4.1 The Three Pillars of Referential Integrity CDC
 
@@ -277,27 +263,22 @@ For permanent failures (e.g., data truly missing from source), we use a DLQ to p
 - **`errors.deadletterqueue.topic.name`**: `dlq_oracle_sink`
 - **`errors.tolerance`**: `all`
 
-### 4.2 Setup & Data
+#### 🔑 Use Case 4: Key Connector Parameters
 
-1. **Oracle Table**: `CUSTOMERS` and `ORDERS` (created in `scripts/setup/01_create_tables.sql`).
-2. **Postgres Table**: Run `scripts/setup/03_create_postgres_tables.sql` in your local Postgres.
-3. **Operations**: `scripts/use_case_4/01_operations.sql` (Inserts/Updates) and `scripts/use_case_4/02_deletes.sql` (Deletes).
+**Sink Connector (Smart Retries):**
 
-### 4.3 🔑 Key Configurations
+- `tasks.max: 4`: Allows multiple tasks to process different records in parallel.
+- `batch.size: 1`: By processing records one at a time, the connector ensures that if a Foreign Key violation occurs, only that specific record is retried (or sent to the DLQ), without impacting unrelated records in a larger batch.
+- `max.retries: 30`: Coupled with `retry.backoff.ms`, this enables "Smart Retries"—if a child record (Order) arrives before the parent (Customer), the sink will retry until the constraint is satisfied.
+- `retry.backoff.ms: 2000`: Sets the wait time between retries to give the parent record time to arrive and be processed by another task.
+- `errors.tolerance: all`: Prevents the connector from failing completely if a record remains unprocessable after all retries.
 
-| Connector  | Parameter                           | Value           | Reason                                                                                      |
-|:---------- |:----------------------------------- |:--------------- |:------------------------------------------------------------------------------------------- |
-| **Source** | *Standard*                          | *Standard*      | No special config enables this; it relies on Sink behavior.                                 |
-| **Sink**   | `tasks.max`                         | `4`             | Allows parallel processing. One task can retry stuck records while others process new data. |
-| **Sink**   | `max.retries`                       | `30`            | High retry count to bridge the timing gap between child and parent records.                 |
-| **Sink**   | `retry.backoff.ms`                  | `2000`          | Waits 2s between retries (Total window: 30 * 2s = 60s).                                     |
-| **Sink**   | `errors.tolerance`                  | `all`           | Prevents the connector from crashing if the retry window is exceeded; sends to DLQ instead. |
-| **Sink**   | `errors.deadletterqueue.topic.name` | `JDBC_SINK_DLQ` | Destination for records that fail after all retries (e.g., truly missing parent).           |
-| **Sink**   | `batch.size`                        | `1`             | Ensures granular handling of records so a single failure doesn't reject a whole batch.      |
+---
 
 ## 🧹 Cleanup
 
+To completely reset the environment (including wiping the Oracle database volume):
+
 ```bash
 docker compose down -v
-terraform -chdir=tf destroy --auto-approve
 ```
