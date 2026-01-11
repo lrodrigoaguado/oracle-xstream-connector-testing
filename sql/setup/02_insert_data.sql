@@ -1,3 +1,4 @@
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 -- Insert sample records
 INSERT INTO DEMO.EMPLOYEES VALUES
 (1, 'John', 'Doe', 'john.doe@example.com', SYSDATE, 75000.00, 'Engineering');
@@ -21,4 +22,17 @@ COMMIT;
 INSERT INTO DEMO.JOBS (JOB_ID, JOB_TITLE, MIN_SALARY, MAX_SALARY) VALUES ('IT_PROG', 'Programmer', 4000, 10000);
 INSERT INTO DEMO.JOBS (JOB_ID, JOB_TITLE, MIN_SALARY, MAX_SALARY) VALUES ('MK_REP', 'Marketing Representative', 4000, 9000);
 INSERT INTO DEMO.JOBS (JOB_ID, JOB_TITLE, MIN_SALARY, MAX_SALARY) VALUES ('ST_CLERK', 'Stock Clerk', 2000, 5000);
+COMMIT;
+-- Data for complex types test
+INSERT INTO DEMO.DATA_TYPES_TEST (ID, TEXT_COL, NUMBER_COL, DATE_COL, TIMESTAMP_COL, CLOB_COL, BLOB_COL, XML_COL, LONG_COL) VALUES (
+    1,
+    'Initial Seed',
+    99.99,
+    SYSDATE,
+    SYSTIMESTAMP,
+    TO_CLOB('Initial CLOB content'),
+    HEXTORAW('0123456789ABCDEF'),
+    XMLType('<init>seed</init>'),
+    'Initial long content'
+);
 COMMIT;

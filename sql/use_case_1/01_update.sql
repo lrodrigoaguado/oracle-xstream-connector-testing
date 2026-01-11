@@ -1,6 +1,6 @@
 -- Update a record
 UPDATE DEMO.EMPLOYEES
-SET SALARY = 80000.00, DEPARTMENT = 'Senior Engineering'
+SET SALARY = 90000.00, DEPARTMENT = 'Senior Engineering'
 WHERE EMPLOYEE_ID = 1;
 
 COMMIT;
