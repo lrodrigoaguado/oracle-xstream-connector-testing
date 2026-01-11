@@ -38,7 +38,11 @@ The containers will start up quickly, but the deployment of the XStream Out serv
 docker logs -f oracle-init
 ```
 
-and wait until you see the message:
+The installation will have finished when you can read the message `[XSTREAM] Oracle XE with XStream configured successfully` and prepare to be patient as it may take some minutes to deploy and configure everything.
+
+### 0.2 Start Confluent Platform (Local)
+
+Start the local Kafka ecosystem (Brokers, Connect, Schema Registry, Control Center) using the provided start script. This script will automatically detect the Oracle RPM in the `etc/` folder and update the `Dockerfile` accordingly.
 
 ```bash
 ================================================================================
@@ -50,9 +54,7 @@ and wait until you see the message:
 
 1. **Verify Oracle Status**: Run the verification script to confirm the database and XStream are configured correctly.
 
-   ```bash
-   ./bin/02_verify_oracle_status.sh
-   ```
+Make sure both the Oracle database is 100% ready and the local environment is working. Then, run the script
 
    You should see: `✅ SYSTEM IS READY FOR DEMO`.
 
