@@ -27,19 +27,8 @@ until echo "select 1 from dual;" | sqlplus -S / as sysdba >/dev/null 2>&1; do
 done
 
 if is_setup_done; then
-    log "XStream setup already completed."
-    log "Ensuring XStream Outbound Server is started..."
-    sqlplus -S / as sysdba <<SQL
-BEGIN
-  DBMS_XSTREAM_ADM.START_OUTBOUND(server_name => 'XOUT');
-EXCEPTION
-  WHEN OTHERS THEN
-    NULL; -- Ignore if already running or other minor errors
-END;
-/
-EXIT;
-SQL
-    exit 0
+    log "XStream basic user setup already completed."
+    # We continue to ensure Outbound Server is correctly configured
 fi
 
 log "Starting XStream configuration..."
