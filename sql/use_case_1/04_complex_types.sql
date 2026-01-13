@@ -2,7 +2,7 @@
 -- The table and trigger are now created during initial setup to ensure capture stability.
 
 -- Insert test data
-INSERT INTO DEMO.DATA_TYPES_TEST (ID, TEXT_COL, NUMBER_COL, DATE_COL, TIMESTAMP_COL, CLOB_COL, BLOB_COL, XML_COL, LONG_COL) VALUES (
+INSERT INTO DEMO.DATA_TYPES_TEST (ID, TEXT_COL, NUMBER_COL, DATE_COL, TIMESTAMP_COL, CLOB_COL, BLOB_COL, XML_COL, LONG_COL, RAW_COL) VALUES (
     2,
     'Sample Text',
     12345.67,
@@ -11,6 +11,10 @@ INSERT INTO DEMO.DATA_TYPES_TEST (ID, TEXT_COL, NUMBER_COL, DATE_COL, TIMESTAMP_
     TO_CLOB('Large text content...'),
     HEXTORAW('DEADBEEF'),
     XMLType('<employee><id>1</id><name>John</name></employee>'),
-    'This is a long text column content that can store up to 2GB of data'
+    'This is a long text column content that can store up to 2GB of data',
+    HEXTORAW('ABCDEF123456')
 );
 COMMIT;
+
+-- Refresh Materialized View after DML if using ON DEMAND
+-- Note: bin/05_run_use_case_1.sh handles this for the demo flow.

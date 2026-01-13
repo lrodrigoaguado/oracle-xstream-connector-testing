@@ -14,7 +14,7 @@ This guide will get you up and running in **under 10 minutes**.
 
 ### Prerequisites
 
-1.  **Docker Desktop** (with Docker Compose v2+).
+1. **Docker Desktop** (with Docker Compose v2+).
 
 ### Step 1: Download Oracle Drivers
 
@@ -58,7 +58,7 @@ Make sure both the Oracle database is 100% ready and the local environment is wo
 
    You should see: `✅ SYSTEM IS READY FOR DEMO`.
 
-2. **Initialize the Databases**:
+1. **Initialize the Databases**:
    > [!IMPORTANT]
    > **CRITICAL STEP**: This **MUST** be run before deploying the connectors. The connector caches table metadata at startup; if the tables skip this step, the Sink Connector will fail due to missing keys.
 
@@ -100,7 +100,7 @@ All use cases assume you have completed the **Quick Start** steps (1-6) successf
 
 ### Use Case 1: Basic Data Flow (DML, DDL, Complex Types)
 
-Captures standard database operations including `UPDATE`, `DELETE`, and schema changes (`DDL`), alongside complex Oracle-specific types like `XMLType`, `CLOB`, and `LONG`.
+Captures standard database operations including `UPDATE`, `DELETE`, and schema changes (`DDL`), alongside complex Oracle-specific types like `XMLType`, `CLOB`, `RAW`, and `LONG`.
 
 - **Mechanism**: Replicated using the `EMPLOYEE_ID` **Primary Key**.
 - **Oracle Action**: Updates salary, deletes a record, adds a column, and inserts complex types.
@@ -128,6 +128,7 @@ The script will execute the SQL scripts in the "sql/use_case_1" subfolder, which
 - `database.out.server.name: XOUT`: Connects to the specific Oracle XStream Outbound Server.
 
 **Sink Connector (Metadata & Routing)**:
+
 - `org.apache.kafka.connect.transforms.InsertField`: Automatically injects the `SINKTIMESTAMP` into the record as it is written to the database, allowing for end-to-end latency measurement.
 - `org.apache.kafka.connect.transforms.RegexRouter`: Standardizes the destination table names in Postgres by stripping the `xstream.DEMO.` prefix from the Kafka topic names.
 - `insert.mode: upsert`: Required to handle both INSERT and UPDATE operations correctly.
@@ -137,22 +138,34 @@ The script will execute the SQL scripts in the "sql/use_case_1" subfolder, which
 
 #### ⚠️ Important Caveats regarding Oracle Technologies
 
-Please note that the following limitations are inherent to the **Oracle Database** and **Oracle XStream API** technologies, not the Confluent Connector itself, as stated in the [Oracle Documentation]([XStream Out Restrictions](https://docs.oracle.com/en/database/oracle/oracle-database/19/xstrm/xstream-out-restrictions.html#GUID-DF1C3A6A-E3EF-4AF4-B4E0-7001E63369C6)).
+#### ⚠️ Strategies for Unsupported Oracle Data Types
 
-> [!WARNING]
-> **LONG Columns**:
->
-> * **Limitation**: Oracle Database **does not support Supplemental Logging for `LONG` columns**.
-> * **Impact**: Since XStream relies on redo logs and specified logging to construct Logical Change Records (LCRs), it is technically impossible for the capture process to retrieve the `LONG` value for every change.
-> * **Result**: The `LONG_COL` field will appear in the Kafka message but will likely be null or empty.
-> * **Recommendation**: Convert legacy `LONG` columns to `CLOB` or `NCLOB` in your database design.
+The following limitations are inherent to the **Oracle Database** and **Oracle XStream API**. We demonstrate two different architectural approaches to overcome these limitations.
+
+##### Approach A: Trigger-based Transformation (Real-time shadow columns)
+
+This approach uses Oracle triggers to automatically populate "shadow" columns of supported types (`CLOB`, `VARCHAR2`) whenever the base table is changed.
 
 > [!TIP]
-> **XMLType Columns**:
+> **XMLType (via Triggers)**:
 >
-> * **Limitation**: Native XStream capture of `XMLTYPE` can be inconsistent depending on storage (Binary XML vs CLOB) and internal filtering.
-> * **Workaround Implemented**: The script `04_complex_types.sql` creates a **Trigger** (`trg_data_types_test`) that automatically copies the `XMLTYPE` column into a `CLOB` column (`XML_COL_CLOB`) whenever a row is changed.
-> * **Result**: You will see your XML data reliably captured in the `XML_COL_CLOB` field in Kafka.
+> - **Source**: Oracle **Trigger** (`trg_data_types_test`) copies `XMLTYPE` to a `CLOB` column (`XML_COL_CLOB`).
+> - **Destination**: Postgres **Trigger** (in `03_create_postgres_tables.sql`) automatically casts the text back into a native `xml` column (`XML_COL`).
+>
+> **RAW (via Triggers)**:
+>
+> - **Source**: Oracle **Trigger** (`trg_data_types_test`) converts `RAW` data to a Hex string in `RAW_COL_VARCH`.
+> - **Destination**: Postgres **Trigger** (in `03_create_postgres_tables.sql`) decodes the Hex string back into binary (`BYTEA`) in `RAW_COL`.
+
+##### Approach B: View-based Transformation (Materialized View Casting)
+
+This alternative approach avoids triggers on the base table by using a **Materialized View** that performs the casting natively in its definition. XStream captures the MV as a standard table.
+
+> [!TIP]
+> **The `DATA_TYPES_MV` Strategy**:
+> - **Mechanism**: A Materialized View ([`DATA_TYPES_MV`](file:///Users/luisrodrigoaguado/Dev/Demos/oracle-xstream-connector-testing/sql/setup/01_create_tables.sql)) selects from the base table and applies `RAWTOHEX()` and `.getClobVal()` in the `SELECT` list.
+> - **Capture**: XStream is configured to capture the MV table.
+> - **Benefit**: Decouples the transformation logic from the base table and leverages native Oracle SQL casting.
 
 ---
 

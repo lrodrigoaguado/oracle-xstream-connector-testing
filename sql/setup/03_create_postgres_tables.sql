@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS "EMPLOYEES" CASCADE;
 DROP TABLE IF EXISTS "DEPARTMENTS" CASCADE;
 DROP TABLE IF EXISTS "JOBS" CASCADE;
 DROP TABLE IF EXISTS "DATA_TYPES_TEST" CASCADE;
+DROP TABLE IF EXISTS "DATA_TYPES_MV" CASCADE;
 
 -- Postgres Setup for Use Case 4: Referential Integrity
 -- Using quoted identifiers to match Oracle's uppercase naming convention and JDBC Sink defaults.
@@ -27,3 +28,50 @@ CREATE TABLE "ORDERS" (
         REFERENCES "CUSTOMERS"("CUSTOMER_ID")
         DEFERRABLE INITIALLY DEFERRED
 );
+
+-- DATA_TYPES_TEST table with native XML workaround
+CREATE TABLE "DATA_TYPES_TEST" (
+    "ID" INT PRIMARY KEY,
+    "TEXT_COL" VARCHAR(100),
+    "NUMBER_COL" DECIMAL(10,2),
+    "DATE_COL" TIMESTAMP,
+    "TIMESTAMP_COL" TIMESTAMP,
+    "CLOB_COL" TEXT,
+    "BLOB_COL" BYTEA,
+    "XML_COL" TEXT,
+    "LONG_COL" TEXT,
+    "XML_COL_CLOB" TEXT,
+    "XML_COL" XML,
+    "RAW_COL" BYTEA,
+    "RAW_COL_VARCH" VARCHAR(100),
+    "SOURCETIMESTAMP" TIMESTAMP,
+    "SINKTIMESTAMP" TIMESTAMP,
+    "MAQUINA_ID" VARCHAR(50)
+);
+
+-- Trigger to sync the CLOB XML and Hex RAW to their native Postgres counterparts
+CREATE OR REPLACE FUNCTION sync_complex_types()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Sync XML
+    IF NEW."XML_COL_CLOB" IS NOT NULL THEN
+        NEW."XML_COL" := NEW."XML_COL_CLOB"::xml;
+    ELSE
+        NEW."XML_COL" := NULL;
+    END IF;
+
+    -- Sync RAW (converting hex string back to bytea)
+    IF NEW."RAW_COL_VARCH" IS NOT NULL THEN
+        NEW."RAW_COL" := decode(NEW."RAW_COL_VARCH", 'hex');
+    ELSE
+        NEW."RAW_COL" := NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_sync_complex_types
+BEFORE INSERT OR UPDATE ON "DATA_TYPES_TEST"
+FOR EACH ROW
+EXECUTE FUNCTION sync_complex_types();
