@@ -58,13 +58,6 @@ echo "Inserting a record with XML, CLOB, and LONG types into Oracle..."
 run_oracle_sql "$USE_CASE_DIR/04_complex_types.sql"
 echo "Oracle complex types insert successful"
 
-# Explicitly refresh the Materialized View used for complex types
-echo "🔄 Refreshing Materialized View (DATA_TYPES_MV)..."
-docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1 <<SQL
-EXEC DBMS_MVIEW.REFRESH('DEMO.DATA_TYPES_MV', 'C');
-EXIT;
-SQL
-
 # Expect 2 rows now (Initial seed + this insert)
 wait_for_replication "DATA_TYPES_TEST" "2" "complex types insert"
 echo ""

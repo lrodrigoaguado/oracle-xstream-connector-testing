@@ -38,11 +38,7 @@ The containers will start up quickly, but the deployment of the XStream Out serv
 docker logs -f oracle-init
 ```
 
-The installation will have finished when you can read the message `[XSTREAM] Oracle XE with XStream configured successfully` and prepare to be patient as it may take some minutes to deploy and configure everything.
-
-### 0.2 Start Confluent Platform (Local)
-
-Start the local Kafka ecosystem (Brokers, Connect, Schema Registry, Control Center) using the provided start script. This script will automatically detect the Oracle RPM in the `etc/` folder and update the `Dockerfile` accordingly.
+The installation will have finished when you can read the message:
 
 ```bash
 ================================================================================
@@ -56,9 +52,13 @@ Start the local Kafka ecosystem (Brokers, Connect, Schema Registry, Control Cent
 
 Make sure both the Oracle database is 100% ready and the local environment is working. Then, run the script
 
-   You should see: `✅ SYSTEM IS READY FOR DEMO`.
+```bash
+./bin/02_verify_oracle.sh
+```
 
-1. **Initialize the Databases**:
+You should see: `✅ SYSTEM IS READY FOR DEMO`.
+
+2. **Initialize the Databases**:
    > [!IMPORTANT]
    > **CRITICAL STEP**: This **MUST** be run before deploying the connectors. The connector caches table metadata at startup; if the tables skip this step, the Sink Connector will fail due to missing keys.
 
@@ -287,6 +287,56 @@ For permanent failures (e.g., data truly missing from source), we use a DLQ to p
 - `max.retries: 30`: Coupled with `retry.backoff.ms`, this enables "Smart Retries"—if a child record (Order) arrives before the parent (Customer), the sink will retry until the constraint is satisfied.
 - `retry.backoff.ms: 2000`: Sets the wait time between retries to give the parent record time to arrive and be processed by another task.
 - `errors.tolerance: all`: Prevents the connector from failing completely if a record remains unprocessable after all retries.
+
+---
+
+### Use Case 5: Partial LOB Updates (Custom SMT)
+
+Handles the complex scenario where a LOB column (CLOB/BLOB) is not part of an update operation. In Oracle XStream, if a LOB is not modified, it is not included in the LCUR (LCR). This leads to challenges in downstream replication.
+
+- **Mechanism**: Uses a **Custom SMT** (`RemoveAttributeWithValue`) to filter out placeholder values injected by the Source Connector.
+- **Oracle Action**: Performs a "Partial Update" on a row containing a CLOB, modifying only a numeric column.
+- **Table**: `DATA_TYPES_TEST` (Update `NUMBER_COL` for `ID = 2`).
+
+```bash
+./bin/09_run_use_case_5.sh
+```
+
+- **Verification**:
+  The script verifies that `NUMBER_COL` is updated in Postgres while the existing `CLOB_COL` value remains untouched (not overwritten by placeholders or nulls).
+
+#### 🛡️ The Partial LOB Update Challenge
+
+When an `UPDATE` occurs in Oracle that does **not** include a LOB column, the XStream API does not provide the LOB value in the change record. This creates a dilemma for replication:
+1. **Source Connector**: If `lob.enabled=true`, the connector must emit *something* for the missing LOB. By default, it uses an `unavailable.value.placeholder`.
+2. **Sink Connector**: Without intervention, the Sink would write this placeholder (e.g., `__cflt_unavailable_value`) into the destination database, corrupting the existing data.
+3. **Requirement**: We need the Sink to **ignore** the field entirely if it contains the placeholder, allowing the database to keep its current value.
+
+#### 💡 The Solution: Custom SMT + Connector Properties
+
+We solve this using a multi-layered approach:
+
+**1. Source Configuration (`lob.enabled` & `placeholder`)**:
+- `lob.enabled: true`: Ensures LOBs are handled by the connector.
+- `unavailable.value.placeholder: "__cflt_unavailable_value"`: Defines a unique string that signaling "this LOB was not part of the update".
+
+**2. Custom SMT (`RemoveAttributeWithValue`)**:
+- We developed a Java-based SMT that inspects records (both Schemaless and Schema-based).
+- If a field's value matches the `target.value` configuration, the SMT **removes the field** from the record before it reaches the Sink.
+
+**3. Sink Configuration (`pk.mode: record_key`)**:
+- Because the field is removed from the record, the JDBC Sink's `UPDATE` statement simply omits that column, preserving the existing data in Postgres.
+
+#### 🔑 Use Case 5: Key Connector Parameters
+
+**Source Connector:**
+- `lob.enabled: true`
+- `unavailable.value.placeholder: __cflt_unavailable_value`
+
+**Sink Connector:**
+- `transforms: ...,RemovePlaceholder`
+- `transforms.RemovePlaceholder.type: io.confluent.csta.smt.RemoveAttributeWithValue`
+- `transforms.RemovePlaceholder.target.values: __cflt_unavailable_value,X19jZmx0X3VuYXZhaWxhYmxlX3ZhbHVl`
 
 ---
 

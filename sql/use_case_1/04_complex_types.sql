@@ -15,6 +15,3 @@ INSERT INTO DEMO.DATA_TYPES_TEST (ID, TEXT_COL, NUMBER_COL, DATE_COL, TIMESTAMP_
     HEXTORAW('ABCDEF123456')
 );
 COMMIT;
-
--- Refresh Materialized View after DML if using ON DEMAND
--- Note: bin/05_run_use_case_1.sh handles this for the demo flow.
