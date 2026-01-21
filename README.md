@@ -15,6 +15,7 @@ This guide will get you up and running in **under 10 minutes**.
 ### Prerequisites
 
 1. **Docker Desktop** (with Docker Compose v2+).
+2. **Maven** (to build the custom SMT).
 
 ### Step 1: Download Oracle Drivers
 
@@ -322,7 +323,8 @@ We solve this using a multi-layered approach:
 
 **2. Custom SMT (`RemoveAttributeWithValue`)**:
 - We developed a Java-based SMT that inspects records (both Schemaless and Schema-based).
-- If a field's value matches the `target.value` configuration, the SMT **removes the field** from the record before it reaches the Sink.
+- The SMT is automatically built as an uber-JAR by the `./00_start_local_environment.sh` script.
+- If a field's value matches the `target.values` configuration, the SMT **removes the field** from the record before it reaches the Sink.
 
 **3. Sink Configuration (`pk.mode: record_key`)**:
 - Because the field is removed from the record, the JDBC Sink's `UPDATE` statement simply omits that column, preserving the existing data in Postgres.

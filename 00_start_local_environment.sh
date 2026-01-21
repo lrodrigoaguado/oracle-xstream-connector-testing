@@ -16,6 +16,11 @@ echo "  - Libaio: $LIBAIO_RPM"
 echo "  - Instant Client: $INSTANT_CLIENT_RPM"
 echo ""
 
+# Build custom SMT
+echo "🔨 Building custom SMT JAR..."
+mvn clean package -f smt/pom.xml -DskipTests
+echo ""
+
 # Build with detected RPMs
 echo "🚀 Building Kafka Connect image..."
 docker compose build --build-arg LIBAIO_RPM="$LIBAIO_RPM" --build-arg INSTANT_CLIENT_RPM="$INSTANT_CLIENT_RPM"
