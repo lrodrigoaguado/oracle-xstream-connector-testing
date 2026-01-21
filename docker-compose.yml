@@ -150,7 +150,7 @@ services:
     command: >
       sh -c "
       echo 'Waiting for oracle service...';
-      sleep 10;
+      sleep 20;
       echo 'Running setup script inside oracle-xe container...';
       docker exec oracle-xe /bin/bash /opt/oracle/setup-xstream.sh
       "
@@ -159,6 +159,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        LIBAIO_RPM: libaio-0.3.112-1.el8.aarch64.rpm
+        INSTANT_CLIENT_RPM: oracle-instantclient-basic-23.26.0.0.0-1.el8.aarch64.rpm
     hostname: connect
     container_name: connect
     depends_on:
@@ -172,6 +175,7 @@ services:
     volumes:
       - ./etc/confluentinc-kafka-connect-jdbc-10.9.1.zip:/tmp/confluentinc-kafka-connect-jdbc-10.9.1.zip
       - ./etc/postgres/postgresql-42.7.8.jar:/usr/share/java/postgresql-42.7.8.jar
+      - ./smt/target/remove-attribute-with-value-1.0-SNAPSHOT.jar:/usr/share/java/kafka-connect-custom-smt/remove-attribute-with-value-1.0-SNAPSHOT.jar
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'broker1:29092'
       CONNECT_REST_ADVERTISED_HOST_NAME: connect
@@ -192,6 +196,7 @@ services:
       CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
       CONNECT_SNI_HOST_CHECK_ENABLED: false
       KAFKA_OPTS: "-Djava.library.path=/usr/lib/oracle/23/client64/lib"
+      LD_LIBRARY_PATH: "/usr/lib/oracle/23/client64/lib"
       CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "true"
       CONNECT_PLUGIN_DISCOVERY: "only_scan"

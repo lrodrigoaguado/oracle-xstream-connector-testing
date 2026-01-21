@@ -27,10 +27,12 @@
         "batch.size": "1",
         "auto.create": "true",
         "auto.evolve": "true",
-        "transforms": "routeTopic,insertTS",
+        "transforms": "routeTopic,RemovePlaceholder,insertTS",
         "transforms.routeTopic.regex": "(.*)\\.DEMO\\.(.*)",
         "transforms.routeTopic.replacement": "$2",
         "transforms.routeTopic.type": "org.apache.kafka.connect.transforms.RegexRouter",
+        "transforms.RemovePlaceholder.type": "io.confluent.csta.smt.RemoveAttributeWithValue",
+        "transforms.RemovePlaceholder.target.values": "__cflt_unavailable_value,X19jZmx0X3VuYXZhaWxhYmxlX3ZhbHVl",
         "transforms.insertTS.type": "org.apache.kafka.connect.transforms.InsertField$Value",
         "transforms.insertTS.timestamp.field": "SINKTIMESTAMP",
         "pk.mode": "record_key"

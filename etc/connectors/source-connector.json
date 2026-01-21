@@ -48,6 +48,11 @@
         "transforms.flatten.add.fields.prefix": "",
         "transforms.convertTS.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
         "transforms.convertTS.target.type": "Timestamp",
-        "transforms.convertTS.field": "SOURCETIMESTAMP"
+        "transforms.convertTS.field": "SOURCETIMESTAMP",
+        "lob.enabled": "true",
+        "lob.oversize.threshold": "-1",
+        "lob.oversize.handling.mode": "fail",
+        "unavailable.value.placeholder": "__cflt_unavailable_value",
+        "binary.handling.mode": "base64"
     }
 }
