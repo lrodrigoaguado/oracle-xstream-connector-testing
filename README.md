@@ -333,7 +333,7 @@ We solve this using a multi-layered approach:
 
 **Source Connector:**
 - `lob.enabled: true`
-- `unavailable.value.placeholder: __cflt_unavailable_valu`e
+- `unavailable.value.placeholder: __cflt_unavailable_value`
 - `lob.oversize.threshold: -1`
 - `lob.oversize.handling.mode: fail`
 - `binary.handling.mode: base64`
