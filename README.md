@@ -174,9 +174,9 @@ This alternative approach avoids triggers on the base table by using a **Materia
 
 Handles replication for tables that lack a Primary Key but possess a **Unique Index**, allowing for full `UPDATE` and `DELETE` support.
 
-- **Mechanism**: Automatically detects and uses the `DEPT_ID` **Unique Index** as the Kafka message key.
+- **Mechanism**: Automatically detects and uses the `DEPT_ID` **Unique Index** as the Kafka message key. This showcases that the connector correctly identifies the unique index for key derivation even when multiple non-unique indexes exist on the same table.
 - **Oracle Action**: Inserts, updates, and deletes records in the `DEPARTMENTS` table.
-- **Table**: `DEPARTMENTS` (Unique Index on `DEPT_ID`).
+- **Table**: `DEPARTMENTS` (Unique Index on `DEPT_ID`, plus additional non-unique indexes on `DEPT_NAME` and `LOCATION_ID`).
 
 ```bash
 ./bin/06_run_use_case_2.sh
@@ -334,6 +334,9 @@ We solve this using a multi-layered approach:
 **Source Connector:**
 - `lob.enabled: true`
 - `unavailable.value.placeholder: __cflt_unavailable_value`
+- `lob.oversize.threshold: -1`
+- `lob.oversize.handling.mode: fail`
+- `binary.handling.mode: base64`
 
 **Sink Connector:**
 - `transforms: ...,RemovePlaceholder`
