@@ -235,7 +235,38 @@ Showcases replication for tables without any PK or Unique Index by manually defi
 
 ---
 
-### Use Case 4: Referential Integrity (Smart Retries)
+### Use Case 4: CLOB Replication
+
+Demonstrates correct replication of CLOB columns, including handling of `NULL` and `EMPTY_CLOB()` values.
+
+- **Mechanism**: Standard replication with `lob.enabled` set to true.
+- **Oracle Action**: Inserts and Updates records with various CLOB states (Populated, NULL, Empty).
+- **Table**: `CLOB_TEST` (ID, DESCRIPTION, CLOB_NULLABLE, CLOB_REQUIRED).
+
+```bash
+./bin/08_run_use_case_4.sh
+```
+
+- **Verification**:
+  The script automatically verifies that data in Postgres matches the source, specifically checking that:
+  - `NULL` in Oracle remains `NULL` in Postgres.
+  - `EMPTY_CLOB()` in Oracle becomes an empty string `''` in Postgres.
+  - Populated CLOBs are replicated correctly.
+
+#### 🔑 Use Case 4: Key Connector Parameters
+
+**Source Connector:**
+
+- `lob.enabled: true`: Required to enable LOB support.
+
+**Sink Connector:**
+
+- `auto.create: true`: Automatically creates the destination table.
+- `pk.mode: record_key`: Uses the source primary key.
+
+---
+
+### Use Case 5: Referential Integrity (Smart Retries)
 
 Demonstrates how to handle **Foreign Key** relationships between parent and child tables, ensuring data consistency even when events arrive out of order.
 
@@ -244,7 +275,7 @@ Demonstrates how to handle **Foreign Key** relationships between parent and chil
 - **Tables**: `CUSTOMERS` (Parent), `ORDERS` (Child).
 
 ```bash
-./bin/08_run_use_case_4.sh
+./bin/09_run_use_case_5.sh
 ```
 
 - **Verification**:
@@ -279,7 +310,7 @@ For permanent failures (e.g., data truly missing from source), we use a DLQ to p
 - **`errors.deadletterqueue.topic.name`**: `dlq_oracle_sink`
 - **`errors.tolerance`**: `all`
 
-#### 🔑 Use Case 4: Key Connector Parameters
+#### 🔑 Use Case 5: Key Connector Parameters
 
 **Sink Connector (Smart Retries):**
 
@@ -291,7 +322,7 @@ For permanent failures (e.g., data truly missing from source), we use a DLQ to p
 
 ---
 
-### Use Case 5: Partial LOB Updates (Custom SMT)
+### Use Case 6: Partial LOB Updates (Custom SMT)
 
 Handles the complex scenario where a LOB column (CLOB/BLOB) is not part of an update operation. In Oracle XStream, if a LOB is not modified, it is not included in the LCUR (LCR). This leads to challenges in downstream replication.
 
@@ -300,7 +331,7 @@ Handles the complex scenario where a LOB column (CLOB/BLOB) is not part of an up
 - **Table**: `DATA_TYPES_TEST` (Update `NUMBER_COL` for `ID = 2`).
 
 ```bash
-./bin/09_run_use_case_5.sh
+./bin/10_run_use_case_6.sh
 ```
 
 - **Verification**:
@@ -329,7 +360,7 @@ We solve this using a multi-layered approach:
 **3. Sink Configuration (`pk.mode: record_key`)**:
 - Because the field is removed from the record, the JDBC Sink's `UPDATE` statement simply omits that column, preserving the existing data in Postgres.
 
-#### 🔑 Use Case 5: Key Connector Parameters
+#### 🔑 Use Case 6: Key Connector Parameters
 
 **Source Connector:**
 - `lob.enabled: true`

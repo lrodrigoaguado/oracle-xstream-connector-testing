@@ -13,7 +13,7 @@
         "errors.tolerance": "all",
         "errors.log.enable": "true",
         "errors.log.include.messages": "true",
-        "topics": "xstream.DEMO.EMPLOYEES,xstream.DEMO.DATA_TYPES_TEST,xstream.DEMO.DEPARTMENTS,xstream.DEMO.JOBS,xstream.DEMO.CUSTOMERS,xstream.DEMO.ORDERS",
+        "topics": "xstream.DEMO.EMPLOYEES,xstream.DEMO.DATA_TYPES_TEST,xstream.DEMO.DEPARTMENTS,xstream.DEMO.JOBS,xstream.DEMO.CUSTOMERS,xstream.DEMO.ORDERS,xstream.DEMO.CLOB_TEST",
         "max.retries": "30",
         "retry.backoff.ms": "2000",
         "errors.deadletterqueue.topic.name": "JDBC_SINK_DLQ",

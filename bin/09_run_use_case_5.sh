@@ -4,51 +4,70 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 USE_CASE_DIR="$PROJECT_DIR/sql/use_case_5"
-# Use the unified connector configurations
-SOURCE_CONFIG="$PROJECT_DIR/etc/connectors/source-connector.json"
-SINK_CONFIG="$PROJECT_DIR/etc/connectors/sink-connector.json"
-CONNECT_URL="http://localhost:8083"
 
 # Source help functions
 source "$SCRIPT_DIR/helpers.sh"
 
 echo "------------------------------------------------------------------------"
-echo "🧪 USE CASE 5: Partial LOB Update (Custom SMT Test)"
+echo "🧪 USE CASE 5: Referential Integrity (Smart Retries)"
 echo "------------------------------------------------------------------------"
 echo ""
 
-# Reset Postgres state to ensure we are testing preservation
-echo "🧹 Resetting CLOB_COL for ID=2 in Postgres to a known state..."
-docker exec -i postgres psql -U test-connector -d test-connector -c "UPDATE \"DEMO.DATA_TYPES_TEST\" SET \"CLOB_COL\" = 'Initial baseline content' WHERE \"ID\" = 2;" > /dev/null
+# Ensure a clean start for the test records
+echo "Cleaning up potential stale data from previous runs..."
+docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1 <<SQL
+DELETE FROM DEMO.ORDERS WHERE ORDER_ID IN (101, 102);
+DELETE FROM DEMO.CUSTOMERS WHERE CUSTOMER_ID IN (1, 2);
+COMMIT;
+SQL
 
-# Initial check
-echo "📊 Current CLOB_COL for ID=2 in Postgres (Baseline):"
-get_postgres_value "DEMO.DATA_TYPES_TEST" "\"ID\" = 2" "CLOB_COL"
+# Wait for cleanup to propagate to Postgres to have a clean initial count
+wait_for_replication "ORDERS" "0" "cleanup of orders" 60
+wait_for_replication "CUSTOMERS" "0" "cleanup of customers" 60
+
+echo "ℹ️  This use case tests FK relationships between CUSTOMERS (parent) and ORDERS (child)."
+echo "   The JDBC Sink uses Smart Retries to handle out-of-order arrival."
 echo ""
 
-# Step 1: Update
+# Get initial counts
+CUST_INITIAL=$(get_postgres_count "CUSTOMERS" 2>/dev/null || echo "0")
+ORD_INITIAL=$(get_postgres_count "ORDERS" 2>/dev/null || echo "0")
+
+# Step 1: Operations (Inserts/Updates)
 echo "------------------------------------------------------------------------"
-echo "📝 Step 1: Testing PARTIAL UPDATE operation"
-echo "Updating NUMBER_COL for ID 2 in Oracle. CLOB_COL should remain unchanged."
-run_oracle_sql "$USE_CASE_DIR/01_partial_update.sql"
+echo "📝 Step 1: Testing INSERT/UPDATE operations with FK relationships"
+echo "Inserting customers and orders with cross-references, and updating them in Oracle..."
+run_oracle_sql "$USE_CASE_DIR/01_operations.sql"
+echo "Oracle operations successful"
 
-echo "⏳ Waiting for update propagation..."
-wait_for_postgres_update "DEMO.DATA_TYPES_TEST" "\"ID\" = 2" "99999.99" "NUMBER_COL"
+# 1. Update confirmation for Customer
+wait_for_postgres_update "CUSTOMERS" "\"CUSTOMER_ID\" = 1" "John Updated" "CUSTOMER_NAME"
 
-echo "🔍 Verifying CLOB_COL content..."
-CLOB_CONTENT=$(get_postgres_value "DEMO.DATA_TYPES_TEST" "\"ID\" = 2" "CLOB_COL")
-echo "CLOB Content: $CLOB_CONTENT"
+# 2. Update confirmation for Order
+wait_for_postgres_update "ORDERS" "\"ORDER_ID\" = 101" "300.00" "TOTAL_AMOUNT"
 
-if [[ "$CLOB_CONTENT" == "Initial baseline content" ]]; then
-    echo -e "${GREEN}✅ SUCCESS: CLOB content preserved!${NC}"
-else
-    echo -e "${RED}❌ FAILURE: CLOB content unexpected: $CLOB_CONTENT${NC}"
-    # Check if we see the placeholder
-    if [[ "$CLOB_CONTENT" == "__cflt_unavailable_value" ]]; then
-        echo -e "${RED}❌ FAILURE: Placeholder found! SMT did not remove it.${NC}"
-    fi
-fi
+# 3. Final counts
+wait_for_replication "CUSTOMERS" "$((CUST_INITIAL + 2))" "2 new customers"
+wait_for_replication "ORDERS" "$((ORD_INITIAL + 2))" "2 new orders" 90
+echo ""
+
+# Step 2: Delete
+echo "------------------------------------------------------------------------"
+echo "🗑️ Step 2: Testing DELETE with FK constraints"
+echo "Removing order and customer records from the Oracle database..."
+BEFORE_ORD_DELETE=$(get_postgres_count "ORDERS" 2>/dev/null || echo "0")
+START_DELETE=$(date +%s.%N)
+run_oracle_sql "$USE_CASE_DIR/02_deletes.sql"
+echo "Oracle deletes successful"
+
+# 1. Wait for Order Delete
+EXPECTED_ORDERS=$((BEFORE_ORD_DELETE - 1))
+wait_for_postgres_delete "ORDERS" "$EXPECTED_ORDERS" "$START_DELETE" 90
+
+# 2. Wait for Customer Delete
+wait_for_replication "CUSTOMERS" "$((CUST_INITIAL + 1))" "customer delete"
+echo ""
 
 echo "------------------------------------------------------------------------"
-echo -e "${GREEN}✅ USE CASE 5 COMPLETED${NC}"
+echo -e "${GREEN}✅ USE CASE 5 COMPLETED SUCCESSFULLY${NC}"
 echo "------------------------------------------------------------------------"
