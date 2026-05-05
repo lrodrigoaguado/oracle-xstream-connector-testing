@@ -53,6 +53,6 @@
         "lob.oversize.threshold": "-1",
         "lob.oversize.handling.mode": "fail",
         "unavailable.value.placeholder": "__cflt_unavailable_value",
-        "binary.handling.mode": "base64"
+        "binary.handling.mode": "bytes"
     }
 }

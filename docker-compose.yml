@@ -133,11 +133,11 @@ services:
       - oracle_data:/opt/oracle/oradata
       - ./bin/01_setup_oracle_xstream.sh:/opt/oracle/setup-xstream.sh
     healthcheck:
-      test: ["CMD", "sqlplus", "-L", "system/Welcome1@//localhost:1521/XEPDB1", "select", "1", "from", "dual"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      test: ["CMD-SHELL", "printf 'WHENEVER SQLERROR EXIT SQL.SQLCODE;\\nSET HEADING OFF FEEDBACK OFF PAGESIZE 0;\\nSELECT status FROM v$$instance;\\nEXIT;\\n' | sqlplus -S -L system/Welcome1@//localhost:1521/XE | grep -q OPEN"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 120s
 
   oracle-init:
     image: docker:cli

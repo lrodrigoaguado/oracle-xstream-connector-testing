@@ -20,10 +20,28 @@ is_setup_done() {
 
 log "Checking if XStream is already configured..."
 
-# Wait for database to be open before checking (optional, but good practice if called early)
-until echo "select 1 from dual;" | sqlplus -S / as sysdba >/dev/null 2>&1; do
+# Wait for database to be OPEN (sqlplus exits 0 even on ORA errors unless WHENEVER SQLERROR is set)
+until sqlplus -S -L / as sysdba >/dev/null 2>&1 <<-SQL
+	WHENEVER SQLERROR EXIT SQL.SQLCODE;
+	SET HEADING OFF FEEDBACK OFF PAGESIZE 0;
+	SELECT 1 FROM v\$instance WHERE status = 'OPEN';
+	EXIT;
+SQL
+do
     log "Waiting for instance to be ready..."
-    sleep 5
+    sleep 10
+done
+
+# Also wait for the PDB to be OPEN before issuing PDB-scoped statements
+until sqlplus -S -L / as sysdba >/dev/null 2>&1 <<-SQL
+	WHENEVER SQLERROR EXIT SQL.SQLCODE;
+	SET HEADING OFF FEEDBACK OFF PAGESIZE 0;
+	SELECT 1 FROM v\$pdbs WHERE name = 'XEPDB1' AND open_mode = 'READ WRITE';
+	EXIT;
+SQL
+do
+    log "Waiting for PDB XEPDB1 to be OPEN..."
+    sleep 10
 done
 
 if is_setup_done; then
@@ -35,6 +53,7 @@ log "Starting XStream configuration..."
 
 log "Enable GoldenGate replication"
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 ALTER SYSTEM SET enable_goldengate_replication=TRUE SCOPE=BOTH;
 EXIT;
 SQL
@@ -42,21 +61,25 @@ SQL
 log "Enable ARCHIVELOG mode (requires restart)"
 # This sequence shuts down and restarts the database instance
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 SHUTDOWN IMMEDIATE;
 STARTUP MOUNT;
 ALTER DATABASE ARCHIVELOG;
 ALTER DATABASE OPEN;
+ALTER PLUGGABLE DATABASE ALL OPEN;
 EXIT;
 SQL
 
 log "Enable Supplemental Logging"
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
 EXIT;
 SQL
 
 log "Create XStream user (C##CFLTUSER)"
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 CREATE USER c##cfltuser IDENTIFIED BY My_RandomPass192837465 DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS CONTAINER=ALL;
 GRANT CREATE SESSION, SET CONTAINER, SELECT_CATALOG_ROLE TO c##cfltuser CONTAINER=ALL;
 GRANT SELECT ANY TABLE, FLASHBACK ANY TABLE, LOCK ANY TABLE TO c##cfltuser CONTAINER=ALL;
@@ -65,6 +88,7 @@ SQL
 
 log "Create Demo user (DEMO)"
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 ALTER SESSION SET CONTAINER = XEPDB1;
 CREATE USER demo IDENTIFIED BY DemoPass123 DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS;
 GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER TO demo;
@@ -73,6 +97,7 @@ SQL
 
 log "Grant XStream Admin Privileges"
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 BEGIN
   DBMS_XSTREAM_AUTH.GRANT_ADMIN_PRIVILEGE(
     grantee => 'c##cfltuser',
@@ -90,6 +115,7 @@ SQL
 
 log "Grant PDB-level privileges for index detection"
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 ALTER SESSION SET CONTAINER = XEPDB1;
 GRANT SELECT ON SYS.DBA_INDEXES TO c##cfltuser;
 GRANT SELECT ON SYS.DBA_IND_COLUMNS TO c##cfltuser;
@@ -100,6 +126,7 @@ SQL
 
 log "Create Outbound Server"
 sqlplus -S / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
 DECLARE
   tables DBMS_UTILITY.UNCL_ARRAY;
   schemas DBMS_UTILITY.UNCL_ARRAY;

@@ -12,6 +12,8 @@ import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.transforms.Transformation;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -141,6 +143,20 @@ public class RemoveAttributeWithValue<R extends ConnectRecord<R>> implements Tra
         // Fast path for String values, common for placeholders
         if (value instanceof String) {
             return targetValues.contains((String) value);
+        }
+        // Connect BYTES schema may surface as byte[] (raw) or ByteBuffer (Avro
+        // converter). Decode as UTF-8 so the placeholder bytes for an
+        // unavailable BLOB / RAW column can be matched against the same target
+        // strings used for text LOBs.
+        if (value instanceof byte[]) {
+            return targetValues.contains(new String((byte[]) value, StandardCharsets.UTF_8));
+        }
+        if (value instanceof ByteBuffer) {
+            // duplicate() so we don't move the position of the original buffer
+            ByteBuffer buf = ((ByteBuffer) value).duplicate();
+            byte[] bytes = new byte[buf.remaining()];
+            buf.get(bytes);
+            return targetValues.contains(new String(bytes, StandardCharsets.UTF_8));
         }
         return targetValues.contains(value.toString());
     }

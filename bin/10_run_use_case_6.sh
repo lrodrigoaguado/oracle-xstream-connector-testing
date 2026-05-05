@@ -19,11 +19,11 @@ echo ""
 
 # Reset Postgres state to ensure we are testing preservation
 echo "🧹 Resetting CLOB_COL for ID=2 in Postgres to a known state..."
-docker exec -i postgres psql -U test-connector -d test-connector -c "UPDATE \"DEMO.DATA_TYPES_TEST\" SET \"CLOB_COL\" = 'Initial baseline content' WHERE \"ID\" = 2;" > /dev/null
+docker exec -i postgres psql -U test-connector -d test-connector -c "UPDATE \"DATA_TYPES_TEST\" SET \"CLOB_COL\" = 'Initial baseline content' WHERE \"ID\" = 2;" > /dev/null
 
 # Initial check
 echo "📊 Current CLOB_COL for ID=2 in Postgres (Baseline):"
-get_postgres_value "DEMO.DATA_TYPES_TEST" "\"ID\" = 2" "CLOB_COL"
+get_postgres_value "DATA_TYPES_TEST" "\"ID\" = 2" "CLOB_COL"
 echo ""
 
 # Step 1: Update
@@ -33,10 +33,10 @@ echo "Updating NUMBER_COL for ID 2 in Oracle. CLOB_COL should remain unchanged."
 run_oracle_sql "$USE_CASE_DIR/01_partial_update.sql"
 
 echo "⏳ Waiting for update propagation..."
-wait_for_postgres_update "DEMO.DATA_TYPES_TEST" "\"ID\" = 2" "99999.99" "NUMBER_COL"
+wait_for_postgres_update "DATA_TYPES_TEST" "\"ID\" = 2" "99999.99" "NUMBER_COL"
 
 echo "🔍 Verifying CLOB_COL content..."
-CLOB_CONTENT=$(get_postgres_value "DEMO.DATA_TYPES_TEST" "\"ID\" = 2" "CLOB_COL")
+CLOB_CONTENT=$(get_postgres_value "DATA_TYPES_TEST" "\"ID\" = 2" "CLOB_COL")
 echo "CLOB Content: $CLOB_CONTENT"
 
 if [[ "$CLOB_CONTENT" == "Initial baseline content" ]]; then

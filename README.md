@@ -54,7 +54,7 @@ The installation will have finished when you can read the message:
 Make sure both the Oracle database is 100% ready and the local environment is working. Then, run the script
 
 ```bash
-./bin/02_verify_oracle.sh
+./bin/02_verify_oracle_status.sh
 ```
 
 You should see: `✅ SYSTEM IS READY FOR DEMO`.
@@ -115,7 +115,7 @@ The script will execute the SQL scripts in the "sql/use_case_1" subfolder, which
 - **Verification**:
 
   ```bash
-  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT "FIRST_NAME", "SALARY" FROM EMPLOYEES WHERE "EMPLOYEE_ID" = 1;'
+  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT "FIRST_NAME", "SALARY" FROM "EMPLOYEES" WHERE "EMPLOYEE_ID" = 1;'
   ```
 
 #### 🔑 Use Case 1: Key Connector Parameters
@@ -185,7 +185,7 @@ Handles replication for tables that lack a Primary Key but possess a **Unique In
 - **Verification**:
 
   ```bash
-  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT * FROM DEPARTMENTS WHERE "DEPT_ID" = 20;'
+  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT * FROM "DEPARTMENTS" WHERE "DEPT_ID" = 20;'
   ```
 
 #### 🔑 Use Case 2: Key Connector Parameters
@@ -216,7 +216,7 @@ Showcases replication for tables without any PK or Unique Index by manually defi
 - **Verification**:
 
   ```bash
-  docker exec -it postgres psql -U test-connector -d test-connector -c "SELECT * FROM JOBS WHERE \"JOB_ID\" = 'AD_VP';"
+  docker exec -it postgres psql -U test-connector -d test-connector -c "SELECT * FROM \"JOBS\" WHERE \"JOB_ID\" = 'AD_VP';"
   ```
 
 #### 🔑 Use Case 3: Key Connector Parameters
@@ -281,7 +281,7 @@ Demonstrates how to handle **Foreign Key** relationships between parent and chil
 - **Verification**:
 
   ```bash
-  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT c."CUSTOMER_NAME", o."TOTAL_AMOUNT" FROM CUSTOMERS c JOIN ORDERS o ON c."CUSTOMER_ID" = o."CUSTOMER_ID" WHERE c."CUSTOMER_ID" = 1;'
+  docker exec -it postgres psql -U test-connector -d test-connector -c 'SELECT c."CUSTOMER_NAME", o."TOTAL_AMOUNT" FROM "CUSTOMERS" c JOIN "ORDERS" o ON c."CUSTOMER_ID" = o."CUSTOMER_ID" WHERE c."CUSTOMER_ID" = 2;'
   ```
 
 ### 4.1 The Three Pillars of Referential Integrity CDC
