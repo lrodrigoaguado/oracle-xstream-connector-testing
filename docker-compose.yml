@@ -120,7 +120,9 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
 
   oracle:
-    image: container-registry.oracle.com/database/express:21.3.0-xe
+    # ARM64 (Apple Silicon M1/M2/M3): use tag 19.19.0.0
+    # x86_64  (Intel Mac / Linux):     use tag 19.3.0.0
+    image: container-registry.oracle.com/database/enterprise:19.19.0.0
     hostname: oracle
     container_name: oracle-xe
     ports:
@@ -131,29 +133,20 @@ services:
       - ORACLE_CHARACTERSET=AL32UTF8
     volumes:
       - oracle_data:/opt/oracle/oradata
-      - ./bin/01_setup_oracle_xstream.sh:/opt/oracle/setup-xstream.sh
+      # The 19c EE image's runUserScripts.sh sources every executable in
+      # /opt/oracle/scripts/setup/ AFTER dbca creates the CDB and BEFORE the
+      # alert-log tail begins. That is the only context inside this container
+      # where SHUTDOWN/STARTUP MOUNT works reliably (the SPFILE created by dbca
+      # is in use). Driving the setup via `docker exec` after the container is
+      # "running" hits ORA-32001 / ORA-00205 because the SPFILE chain is no
+      # longer canonical.
+      - ./bin/01_setup_oracle_xstream.sh:/opt/oracle/scripts/setup/01_setup_xstream.sh
     healthcheck:
-      test: ["CMD-SHELL", "printf 'WHENEVER SQLERROR EXIT SQL.SQLCODE;\\nSET HEADING OFF FEEDBACK OFF PAGESIZE 0;\\nSELECT status FROM v$$instance;\\nEXIT;\\n' | sqlplus -S -L system/Welcome1@//localhost:1521/XE | grep -q OPEN"]
+      test: ["CMD-SHELL", "printf 'WHENEVER SQLERROR EXIT SQL.SQLCODE;\\nSET HEADING OFF FEEDBACK OFF PAGESIZE 0;\\nSELECT status FROM v$$instance;\\nEXIT;\\n' | sqlplus -S -L system/Welcome1@//localhost:1521/ORCLCDB | grep -q OPEN"]
       interval: 15s
       timeout: 10s
       retries: 60
-      start_period: 120s
-
-  oracle-init:
-    image: docker:cli
-    container_name: oracle-init
-    depends_on:
-      oracle:
-        condition: service_healthy
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: >
-      sh -c "
-      echo 'Waiting for oracle service...';
-      sleep 20;
-      echo 'Running setup script inside oracle-xe container...';
-      docker exec oracle-xe /bin/bash /opt/oracle/setup-xstream.sh
-      "
+      start_period: 600s
 
   connect:
     build:

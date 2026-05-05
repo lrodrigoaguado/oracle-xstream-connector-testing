@@ -15,7 +15,7 @@ echo ""
 
 # Ensure a clean start
 echo "Cleaning up potential stale data..."
-docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1 <<SQL
+docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1 <<SQL
 BEGIN
    EXECUTE IMMEDIATE 'DROP TABLE DEMO.CLOB_TEST';
 EXCEPTION

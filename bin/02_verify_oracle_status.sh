@@ -10,7 +10,7 @@ echo "🔍 Verifying Oracle XStream Configuration..."
 # 1. Check Outbound Server Status
 echo "----------------------------------------"
 echo "Checking XStream Outbound Server Status:"
-OUTBOUND_OUTPUT=$(docker exec -i oracle-xe sqlplus -S / as sysdba <<SQL
+OUTBOUND_OUTPUT=$(docker exec -i -e ORACLE_SID=ORCLCDB oracle-xe sqlplus -S / as sysdba <<SQL
 SET LINESIZE 200
 SET PAGESIZE 100
 COL server_name FORMAT a20
@@ -26,7 +26,7 @@ SERVER_STATUS=$(echo "$OUTBOUND_OUTPUT" | grep -E "^XOUT" | awk '{print $2}')
 # 2. Check Capture Process Status
 echo "----------------------------------------"
 echo "Checking Capture Process Status:"
-CAPTURE_OUTPUT=$(docker exec -i oracle-xe sqlplus -S / as sysdba <<SQL
+CAPTURE_OUTPUT=$(docker exec -i -e ORACLE_SID=ORCLCDB oracle-xe sqlplus -S / as sysdba <<SQL
 SET LINESIZE 200
 SET PAGESIZE 100
 COL capture_name FORMAT a20
@@ -44,7 +44,7 @@ CAPTURE_STATUS=$(echo "$CAPTURE_OUTPUT" | grep -E "^CONFLUENT" | awk '{print $3}
 # 3. Check User
 echo "----------------------------------------"
 echo "Checking Connector User (C##CFLTUSER):"
-docker exec -i oracle-xe sqlplus -S / as sysdba <<SQL
+docker exec -i -e ORACLE_SID=ORCLCDB oracle-xe sqlplus -S / as sysdba <<SQL
 SET LINESIZE 200
 COL username FORMAT a20
 COL account_status FORMAT a20
@@ -86,5 +86,5 @@ else
     echo "Please check logs or restart the setup explicitly."
     echo "----------------------------------------"
     echo "Last 20 lines of Oracle Alert Log:"
-    docker exec oracle-xe tail -n 20 /opt/oracle/diag/rdbms/xe/XE/trace/alert_XE.log
+    docker exec oracle-xe tail -n 20 /opt/oracle/diag/rdbms/orclcdb/ORCLCDB/trace/alert_ORCLCDB.log
 fi

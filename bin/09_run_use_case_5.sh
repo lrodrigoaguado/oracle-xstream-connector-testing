@@ -15,7 +15,7 @@ echo ""
 
 # Ensure a clean start for the test records
 echo "Cleaning up potential stale data from previous runs..."
-docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1 <<SQL
+docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1 <<SQL
 DELETE FROM DEMO.ORDERS WHERE ORDER_ID IN (101, 102);
 DELETE FROM DEMO.CUSTOMERS WHERE CUSTOMER_ID IN (1, 2);
 COMMIT;

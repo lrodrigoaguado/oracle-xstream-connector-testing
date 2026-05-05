@@ -10,12 +10,16 @@ The code and/or instructions here available are NOT intended for production usag
 
 ## 🏗️ Quick Start
 
-This guide will get you up and running in **under 10 minutes**.
+This guide will get you up and running in **around 15 minutes** on subsequent runs. The very first run takes longer because the Oracle 19c Enterprise image (~7 GB) must be pulled and dbca needs to create the CDB inside the container.
 
 ### Prerequisites
 
 1. **Docker Desktop** (with Docker Compose v2+).
 2. **Maven** (to build the custom SMT).
+3. **Access to the Oracle Container Registry**. This branch uses the Oracle Database 19c **Enterprise Edition** image (`container-registry.oracle.com/database/enterprise:19.19.0.0`), which is gated by Oracle's licence terms.
+   - Create a free account at <https://container-registry.oracle.com>.
+   - Open the **Database → enterprise** repository in the web UI and accept the licence agreement.
+   - Authenticate Docker with `docker login container-registry.oracle.com` using those credentials.
 
 ### Step 1: Download Oracle Drivers
 
@@ -36,7 +40,7 @@ Run the following script to start the entire Docker environment (Kafka, Oracle, 
 The containers will start up quickly, but the deployment of the XStream Out server and capture process may take a few minutes.. Please, check the initialization by running:
 
 ```bash
-docker logs -f oracle-init
+docker logs -f oracle-xe
 ```
 
 The installation will have finished when you can read the message:

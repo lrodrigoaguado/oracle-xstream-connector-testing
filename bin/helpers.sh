@@ -12,10 +12,10 @@ run_oracle_sql() {
     local silent="${2:-true}"
 
     if [ "$silent" == "true" ]; then
-        cat "$sql_file" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1 > /dev/null 2>&1
+        cat "$sql_file" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1 > /dev/null 2>&1
     else
         echo -e "${YELLOW}📤 Executing: $(basename "$sql_file")${NC}"
-        cat "$sql_file" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1
+        cat "$sql_file" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1
     fi
 }
 

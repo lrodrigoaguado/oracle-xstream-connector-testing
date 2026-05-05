@@ -10,7 +10,7 @@ echo "🚀 Initializing Databases..."
 echo "----------------------------------------------------------------"
 echo "🟢 Step 1/3: Creating Oracle Tables..."
 if [ -f "$PROJECT_DIR/sql/setup/01_create_tables.sql" ]; then
-    cat "$PROJECT_DIR/sql/setup/01_create_tables.sql" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1
+    cat "$PROJECT_DIR/sql/setup/01_create_tables.sql" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1
     echo "✅ Tables created."
 else
     echo "⚠️ sql/setup/01_create_tables.sql not found!"
@@ -21,7 +21,7 @@ fi
 echo "----------------------------------------------------------------"
 echo "🟢 Step 2/3: Inserting Initial Data into Oracle..."
 if [ -f "$PROJECT_DIR/sql/setup/02_insert_data.sql" ]; then
-    cat "$PROJECT_DIR/sql/setup/02_insert_data.sql" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/XEPDB1
+    cat "$PROJECT_DIR/sql/setup/02_insert_data.sql" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1
     echo "✅ Data inserted."
 else
     echo "⚠️ sql/setup/02_insert_data.sql not found!"
