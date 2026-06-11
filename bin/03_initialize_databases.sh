@@ -10,7 +10,7 @@ echo "🚀 Initializing Databases..."
 echo "----------------------------------------------------------------"
 echo "🟢 Step 1/3: Creating Oracle Tables..."
 if [ -f "$PROJECT_DIR/sql/setup/01_create_tables.sql" ]; then
-    cat "$PROJECT_DIR/sql/setup/01_create_tables.sql" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1
+    cat "$PROJECT_DIR/sql/setup/01_create_tables.sql" | docker exec -i oracle-19 sqlplus -S demo/DemoPass123@//localhost:1521/SOURCEPDB
     echo "✅ Tables created."
 else
     echo "⚠️ sql/setup/01_create_tables.sql not found!"
@@ -21,7 +21,7 @@ fi
 echo "----------------------------------------------------------------"
 echo "🟢 Step 2/3: Inserting Initial Data into Oracle..."
 if [ -f "$PROJECT_DIR/sql/setup/02_insert_data.sql" ]; then
-    cat "$PROJECT_DIR/sql/setup/02_insert_data.sql" | docker exec -i oracle-xe sqlplus -S demo/DemoPass123@//localhost:1521/ORCLPDB1
+    cat "$PROJECT_DIR/sql/setup/02_insert_data.sql" | docker exec -i oracle-19 sqlplus -S demo/DemoPass123@//localhost:1521/SOURCEPDB
     echo "✅ Data inserted."
 else
     echo "⚠️ sql/setup/02_insert_data.sql not found!"
@@ -31,18 +31,18 @@ fi
 echo "----------------------------------------------------------------"
 echo "✅ Oracle Databases Initialized Successfully!"
 
-# 3. Postgres Initialization - Create Tables with Referential Integrity
+# 3. Oracle Sink Initialization - Create Tables with Referential Integrity and complex-type triggers
 echo "----------------------------------------------------------------"
-echo "🔵 Step 3/3: Creating Postgres Tables (with FK constraints for Use Case 4)..."
-if [ -f "$PROJECT_DIR/sql/setup/03_create_postgres_tables.sql" ]; then
-    cat "$PROJECT_DIR/sql/setup/03_create_postgres_tables.sql" | docker exec -i postgres psql -U test-connector -d test-connector
-    echo "✅ Postgres tables created."
+echo "🔵 Step 3/3: Pre-creating the full mirrored sink schema in SINKPDB.DEMO (7 tables, FK + complex-type trigger)..."
+if [ -f "$PROJECT_DIR/sql/setup/03_create_oracle_sink_tables.sql" ]; then
+    cat "$PROJECT_DIR/sql/setup/03_create_oracle_sink_tables.sql" | docker exec -i oracle-19 sqlplus -S demo/DemoPass123@//localhost:1521/SINKPDB
+    echo "✅ Oracle sink tables created."
 else
-    echo "⚠️ sql/setup/03_create_postgres_tables.sql not found!"
+    echo "⚠️ sql/setup/03_create_oracle_sink_tables.sql not found!"
     exit 1
 fi
 
 echo "----------------------------------------------------------------"
 echo "✅ All Databases Initialized Successfully!"
 echo ""
-echo "ℹ️  Other Postgres tables will be auto-created by the JDBC Sink Connector (auto.create=true)."
+echo "ℹ️  The sink connector runs with auto.create=false: every target table above was created here, mirroring the source (see sql/setup/03_create_oracle_sink_tables.sql for the deliberate differences)."

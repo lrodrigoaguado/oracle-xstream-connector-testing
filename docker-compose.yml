@@ -124,13 +124,17 @@ services:
     # x86_64  (Intel Mac / Linux):     use tag 19.3.0.0
     image: container-registry.oracle.com/database/enterprise:19.19.0.0
     hostname: oracle
-    container_name: oracle-xe
+    container_name: oracle-19
     ports:
       - "1521:1521"
       - "5500:5500"
     environment:
       - ORACLE_PWD=Welcome1
       - ORACLE_CHARACTERSET=AL32UTF8
+      # Name the default PDB SOURCEPDB (the image's default is ORCLPDB1). dbca
+      # creates the PDB with this name; SINKPDB is created later by the setup
+      # script. Pairing SOURCEPDB/SINKPDB makes the source/target roles explicit.
+      - ORACLE_PDB=SOURCEPDB
     volumes:
       - oracle_data:/opt/oracle/oradata
       # The 19c EE image's runUserScripts.sh sources every executable in
@@ -141,6 +145,12 @@ services:
       # "running" hits ORA-32001 / ORA-00205 because the SPFILE chain is no
       # longer canonical.
       - ./bin/01_setup_oracle_xstream.sh:/opt/oracle/scripts/setup/01_setup_xstream.sh
+      # CREATE_OUTBOUND (in the setup script above) starts the capture +
+      # outbound server in the image's initial DB-creation incarnation, but they
+      # do NOT survive the image's final handover restart -- they land DISABLED.
+      # This startup hook runs on every boot AFTER the final instance is open and
+      # (re)starts them. See bin/01b_start_xstream.sh for the full rationale.
+      - ./bin/01b_start_xstream.sh:/opt/oracle/scripts/startup/01_start_xstream.sh
     healthcheck:
       test: ["CMD-SHELL", "printf 'WHENEVER SQLERROR EXIT SQL.SQLCODE;\\nSET HEADING OFF FEEDBACK OFF PAGESIZE 0;\\nSELECT status FROM v$$instance;\\nEXIT;\\n' | sqlplus -S -L system/Welcome1@//localhost:1521/ORCLCDB | grep -q OPEN"]
       interval: 15s
@@ -167,7 +177,6 @@ services:
       - "8083:8083"
     volumes:
       - ./etc/confluentinc-kafka-connect-jdbc-10.9.1.zip:/tmp/confluentinc-kafka-connect-jdbc-10.9.1.zip
-      - ./etc/postgres/postgresql-42.7.8.jar:/usr/share/java/postgresql-42.7.8.jar
       - ./smt/target/remove-attribute-with-value-1.0-SNAPSHOT.jar:/usr/share/java/kafka-connect-custom-smt/remove-attribute-with-value-1.0-SNAPSHOT.jar
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'broker1:29092'
@@ -199,9 +208,16 @@ services:
       - |
         echo "Installing Connector"
         confluent-hub install --no-prompt confluentinc/kafka-connect-oracle-xstream-cdc-source:1.3.0
+        # The XStream SOURCE connector needs the native Instant Client libs + xstreams.jar.
         cp /usr/lib/oracle/23/client64/lib/*.jar /usr/share/confluent-hub-components/confluentinc-kafka-connect-oracle-xstream-cdc-source/lib/
         confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:latest
-        cp /usr/lib/oracle/23/client64/lib/*.jar /usr/share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/
+        # Do NOT copy the Instant Client jars into the JDBC SINK connector. It uses the
+        # pure-Java Oracle thin driver, which it already bundles (ojdbc8-19.7.0.0.jar).
+        # Adding the Instant Client ojdbc8.jar (23c) puts a SECOND oracle.jdbc.OracleDriver
+        # (with its own META-INF/services/java.sql.Driver) on the same plugin classloader;
+        # DriverManager's lazy ServiceLoader scan then aborts on the conflicting provider
+        # and registers NO Oracle driver, yielding "No suitable driver found for
+        # jdbc:oracle:thin" when the sink connector validates its connection.
         #
         echo "Launching Kafka Connect worker"
         /etc/confluent/docker/run &
@@ -265,26 +281,6 @@ services:
       CONTROL_CENTER_ALERTMANAGER_URL: http://alertmanager:9093
       CONTROL_CENTER_ALERTMANAGER_CONFIG_FILE: /mnt/config/alertmanager-generated.yml
       CONTROL_CENTER_REST_LISTENERS: "http://0.0.0.0:9021"
-
-
-
-
-  postgres:
-    image: postgres:16
-    container_name: postgres
-    environment:
-      POSTGRES_DB: test-connector
-      POSTGRES_USER: test-connector
-      POSTGRES_PASSWORD: test-connector
-    ports:
-      - "5432:5432"
-    entrypoint: ["bash","-c","/usr/local/bin/docker-entrypoint.sh postgres & pid=$!; echo 'Waiting for Postgres...'; until pg_isready -U test-connector >/dev/null 2>&1; do sleep 1; done; echo 'Applying init.sql'; psql -U test-connector -d test-connector -f /docker-entrypoint-initdb.d/init.sql || echo 'init.sql apply finished'; wait $pid"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U test-connector"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
 
 volumes:
   oracle_data:

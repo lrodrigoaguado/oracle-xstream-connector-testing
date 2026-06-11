@@ -30,5 +30,5 @@ echo "🌟 Starting all services..."
 docker compose up -d
 
 echo ""
-echo "✅ Environment started. Check 'docker logs -f oracle-xe' for XStream status."
+echo "✅ Environment started. Check 'docker logs -f oracle-19' for XStream status."
 echo "Once XStream is ready, run ./bin/02_verify_oracle_status.sh to confirm."

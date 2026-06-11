@@ -26,5 +26,7 @@ target/
 crash.log
 sshkey*
 
-
 etc/oracle*.rpm
+
+.claude
+CLAUDE.md

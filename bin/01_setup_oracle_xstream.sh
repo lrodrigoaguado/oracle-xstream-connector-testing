@@ -11,7 +11,7 @@
 #     ORA-32001 / ORA-00205 because the SPFILE chain is no longer canonical.
 #
 #  2. Executed manually via
-#       docker exec oracle-xe bash /opt/oracle/scripts/setup/01_setup_xstream.sh
+#       docker exec oracle-19 bash /opt/oracle/scripts/setup/01_setup_xstream.sh
 #     for re-runs / debugging. The wait-for-OPEN loop and the idempotency check
 #     keep this safe.
 #
@@ -25,7 +25,7 @@
     # /home/oracle/.bashrc, which is not sourced by `docker exec`. Without
     # these, `sqlplus / as sysdba` fails with ORA-12162.
     export ORACLE_SID="${ORACLE_SID:-ORCLCDB}"
-    export ORACLE_PDB="${ORACLE_PDB:-ORCLPDB1}"
+    export ORACLE_PDB="${ORACLE_PDB:-SOURCEPDB}"
     export ORAENV_ASK=NO
 
     log() {
@@ -90,10 +90,10 @@ SQL
 
     # Wait until the PDB is OPEN READ WRITE before issuing PDB-scoped statements.
     until sqlplus_sysdba >/dev/null 2>&1 <<-SQL
-		SELECT 1 FROM v\$pdbs WHERE name = 'ORCLPDB1' AND open_mode = 'READ WRITE';
+		SELECT 1 FROM v\$pdbs WHERE name = 'SOURCEPDB' AND open_mode = 'READ WRITE';
 	SQL
     do
-        log "Waiting for PDB ORCLPDB1 to be OPEN..."
+        log "Waiting for PDB SOURCEPDB to be OPEN..."
         sleep 10
     done
 
@@ -136,6 +136,51 @@ SQL
 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
 SQL
 
+    # SINKPDB is cloned from PDB$SEED, which has no USERS tablespace. It MUST be
+    # provisioned (with its own USERS tablespace) BEFORE the common XStream user
+    # is created below: a common user created with CONTAINER=ALL and DEFAULT
+    # TABLESPACE USERS is synced into every PDB, and that sync fails with ORA-959
+    # in any PDB that lacks USERS. Creating SINKPDB + its USERS tablespace first
+    # lets both that sync and the explicit Sink DEMO user (further below) succeed.
+    log "Provision Sink PDB (SINKPDB) for replication target"
+    sqlplus_sysdba <<SQL
+DECLARE
+  pdb_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO pdb_count FROM v\$pdbs WHERE name = 'SINKPDB';
+  IF pdb_count = 0 THEN
+    EXECUTE IMMEDIATE 'CREATE PLUGGABLE DATABASE SINKPDB ADMIN USER pdbadmin IDENTIFIED BY DemoPass123 ROLES=(DBA) FILE_NAME_CONVERT=(''/opt/oracle/oradata/ORCLCDB/pdbseed/'',''/opt/oracle/oradata/ORCLCDB/SINKPDB/'')';
+    EXECUTE IMMEDIATE 'ALTER PLUGGABLE DATABASE SINKPDB OPEN';
+  ELSE
+    DECLARE
+      pdb_open NUMBER;
+    BEGIN
+      SELECT COUNT(*) INTO pdb_open FROM v\$pdbs
+        WHERE name = 'SINKPDB' AND open_mode = 'READ WRITE';
+      IF pdb_open = 0 THEN
+        EXECUTE IMMEDIATE 'ALTER PLUGGABLE DATABASE SINKPDB OPEN';
+      END IF;
+    END;
+  END IF;
+END;
+/
+ALTER PLUGGABLE DATABASE SINKPDB SAVE STATE;
+SQL
+
+    log "Create USERS tablespace inside SINKPDB"
+    sqlplus_sysdba <<SQL
+ALTER SESSION SET CONTAINER = SINKPDB;
+DECLARE
+  ts_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO ts_count FROM dba_tablespaces WHERE tablespace_name = 'USERS';
+  IF ts_count = 0 THEN
+    EXECUTE IMMEDIATE 'CREATE TABLESPACE USERS DATAFILE ''/opt/oracle/oradata/ORCLCDB/SINKPDB/users01.dbf'' SIZE 100M REUSE AUTOEXTEND ON NEXT 50M MAXSIZE UNLIMITED';
+  END IF;
+END;
+/
+SQL
+
     log "Create XStream user (C##CFLTUSER)"
     sqlplus_sysdba <<SQL
 CREATE USER c##cfltuser IDENTIFIED BY My_RandomPass192837465 DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS CONTAINER=ALL;
@@ -145,9 +190,24 @@ SQL
 
     log "Create Demo user (DEMO)"
     sqlplus_sysdba <<SQL
-ALTER SESSION SET CONTAINER = ORCLPDB1;
+ALTER SESSION SET CONTAINER = SOURCEPDB;
 CREATE USER demo IDENTIFIED BY DemoPass123 DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS;
 GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER TO demo;
+SQL
+
+    log "Create Sink Demo user (DEMO) inside SINKPDB"
+    sqlplus_sysdba <<SQL
+ALTER SESSION SET CONTAINER = SINKPDB;
+DECLARE
+  user_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO user_count FROM all_users WHERE username = 'DEMO';
+  IF user_count = 0 THEN
+    EXECUTE IMMEDIATE 'CREATE USER demo IDENTIFIED BY DemoPass123 DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS';
+    EXECUTE IMMEDIATE 'GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE TRIGGER, CREATE PROCEDURE, CREATE TYPE TO demo';
+  END IF;
+END;
+/
 SQL
 
     log "Grant XStream Admin Privileges"
@@ -168,7 +228,7 @@ SQL
 
     log "Grant PDB-level privileges for index detection"
     sqlplus_sysdba <<SQL
-ALTER SESSION SET CONTAINER = ORCLPDB1;
+ALTER SESSION SET CONTAINER = SOURCEPDB;
 GRANT SELECT ON SYS.DBA_INDEXES TO c##cfltuser;
 GRANT SELECT ON SYS.DBA_IND_COLUMNS TO c##cfltuser;
 GRANT SELECT ON SYS.ALL_INDEXES TO c##cfltuser;
@@ -194,7 +254,7 @@ BEGIN
   DBMS_XSTREAM_ADM.CREATE_OUTBOUND(
     capture_name          =>  'CONFLUENT_XOUT1',
     server_name           =>  'XOUT',
-    source_container_name =>  'ORCLPDB1',
+    source_container_name =>  'SOURCEPDB',
     table_names           =>  tables,
     schema_names          =>  schemas,
     comment               => 'Confluent XStream CDC Connector' );

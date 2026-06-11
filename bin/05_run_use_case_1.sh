@@ -5,63 +5,37 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 USE_CASE_DIR="$PROJECT_DIR/sql/use_case_1"
 
-# Source help functions
 source "$SCRIPT_DIR/helpers.sh"
 
-echo "------------------------------------------------------------------------"
-echo "🧪 USE CASE 1: Basic Data Flow (DML, DDL, Complex Types)"
-echo "------------------------------------------------------------------------"
-echo ""
+uc_intro "1" "Basic data flow — DML, DDL & complex types" \
+"An UPDATE, a DELETE, an online schema change (ADD/DROP column) and a row of
+  complex types (XML, CLOB, LONG, BLOB) all flow from SOURCEPDB to SINKPDB."
 
-# Get initial EMPLOYEES count
-INITIAL_COUNT=$(get_postgres_count "EMPLOYEES" 2>/dev/null || echo "0")
-echo "📊 Initial EMPLOYEES count in Postgres: $INITIAL_COUNT"
-echo ""
-
-# Step 1: Update
-echo "------------------------------------------------------------------------"
-echo "📝 Step 1: Testing UPDATE operation"
-echo "Updating salary for Employee ID 1 in the Oracle database..."
+# Step 1 — UPDATE
+uc_step "Step 1/4" "UPDATE an existing row"
+uc_source "Raise employee 1's salary to 90,000 and move them to 'Senior Engineering'."
 run_oracle_sql "$USE_CASE_DIR/01_update.sql"
-echo "Oracle update successful"
-# Check for salary update to 90000.00 for employee 1
-wait_for_postgres_update "EMPLOYEES" "\"EMPLOYEE_ID\" = 1" "90000" "SALARY"
-echo ""
+wait_for_sink_update "EMPLOYEES" "\"EMPLOYEE_ID\" = 1" "90000" "SALARY"
 
-# Step 2: Delete
-echo "------------------------------------------------------------------------"
-echo "🗑️ Step 2: Testing DELETE operation"
-echo "Removing one employee record from the Oracle database..."
-BEFORE_DELETE=$(get_postgres_count "EMPLOYEES" 2>/dev/null || echo "0")
+# Step 2 — DELETE
+uc_step "Step 2/4" "DELETE a row"
+uc_source "Delete employee 3."
+BEFORE_DELETE=$(get_sink_count "EMPLOYEES" 2>/dev/null || echo "0")
 START_DELETE=$(date +%s.%N)
 run_oracle_sql "$USE_CASE_DIR/02_delete.sql"
-echo "Oracle delete successful"
-EXPECTED_AFTER_DELETE=$((BEFORE_DELETE - 1))
-wait_for_postgres_delete "EMPLOYEES" "$EXPECTED_AFTER_DELETE" "$START_DELETE"
-echo ""
+wait_for_sink_delete "EMPLOYEES" "$((BEFORE_DELETE - 1))" "$START_DELETE"
 
-# Step 3: Schema Changes
-echo "------------------------------------------------------------------------"
-echo "🔧 Step 3: Testing SCHEMA CHANGES (DDL)"
-echo "Adding a new column and inserting a record into the Oracle database..."
+# Step 3 — Schema change (DDL) + insert exercising the new column
+uc_step "Step 3/4" "Online schema change (DDL)"
+uc_source "ADD column PHONE_NUMBER, DROP column HIRE_DATE, then INSERT employee 4 (with a phone number)."
 run_oracle_sql "$USE_CASE_DIR/03_schema_changes.sql"
-echo "Oracle schema changes successful"
-echo "⏳ Waiting for schema change propagation (checking topics)..."
-sleep 5
-echo -e "${GREEN}✅ Schema changes applied. Check __orcl-schema-changes topic in Control Center.${NC}"
-echo ""
+wait_for_sink_update "EMPLOYEES" "\"EMPLOYEE_ID\" = 4" "555-1234" "PHONE_NUMBER"
+uc_note "auto.evolve added the PHONE_NUMBER column to the sink table on the fly."
 
-# Step 4: Complex Types
-echo "------------------------------------------------------------------------"
-echo "📦 Step 4: Testing COMPLEX DATA TYPES"
-echo "Inserting a record with XML, CLOB, and LONG types into Oracle..."
+# Step 4 — Complex data types
+uc_step "Step 4/4" "Complex data types"
+uc_source "INSERT a row carrying XML, CLOB, LONG and BLOB values."
 run_oracle_sql "$USE_CASE_DIR/04_complex_types.sql"
-echo "Oracle complex types insert successful"
-
-# Expect 2 rows now (Initial seed + this insert)
 wait_for_replication "DATA_TYPES_TEST" "2" "complex types insert"
-echo ""
 
-echo "------------------------------------------------------------------------"
-echo -e "${GREEN}✅ USE CASE 1 COMPLETED SUCCESSFULLY${NC}"
-echo "------------------------------------------------------------------------"
+uc_pass "1"

@@ -5,46 +5,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 USE_CASE_DIR="$PROJECT_DIR/sql/use_case_2"
 
-# Source help functions
 source "$SCRIPT_DIR/helpers.sh"
 
-echo "------------------------------------------------------------------------"
-echo "🧪 USE CASE 2: No-PK with Unique Index (Auto-Key Derivation)"
-echo "------------------------------------------------------------------------"
-echo ""
+uc_intro "2" "No primary key, but a unique index" \
+"DEPARTMENTS has no PK — only a unique index on DEPT_ID. The connector detects
+  that index and uses it as the message key, so UPDATE and DELETE replicate
+  correctly (on the target, DEPT_ID is promoted to a real PRIMARY KEY)."
 
-# Get initial DEPARTMENTS count
-INITIAL_COUNT=$(get_postgres_count "DEPARTMENTS" 2>/dev/null || echo "0")
-echo "📊 Initial DEPARTMENTS count in Postgres: $INITIAL_COUNT"
-echo ""
+INITIAL_COUNT=$(get_sink_count "DEPARTMENTS" 2>/dev/null || echo "0")
 
-# Step 1: Operations (Inserts/Updates)
-echo "------------------------------------------------------------------------"
-echo "📝 Step 1: Testing INSERT/UPDATE operations on DEPARTMENTS"
-echo "Inserting a new department and updating an existing one in Oracle..."
+# Step 1 — INSERT + UPDATE
+uc_step "Step 1/2" "INSERT and UPDATE"
+uc_source "INSERT department 40 (Finance)."
+uc_source "UPDATE department 20's name to 'Legal'."
 run_oracle_sql "$USE_CASE_DIR/01_operations.sql"
-echo "Oracle operations successful"
+wait_for_sink_update "DEPARTMENTS" "\"DEPT_ID\" = 20" "Legal" "DEPT_NAME"
+wait_for_replication "DEPARTMENTS" "$((INITIAL_COUNT + 1))" "new department insert"
 
-# 1. Update confirmation (DEPT_ID=20, DEPT_NAME='Legal')
-wait_for_postgres_update "DEPARTMENTS" "\"DEPT_ID\" = 20" "Legal" "DEPT_NAME"
-
-# 2. Count confirmation
-EXPECTED_COUNT=$((INITIAL_COUNT + 1))
-wait_for_replication "DEPARTMENTS" "$EXPECTED_COUNT" "new department insert"
-echo ""
-
-# Step 2: Delete
-echo "------------------------------------------------------------------------"
-echo "🗑️ Step 2: Testing DELETE operation on DEPARTMENTS"
-echo "Removing a department record from the Oracle database..."
-BEFORE_DELETE=$(get_postgres_count "DEPARTMENTS" 2>/dev/null || echo "0")
+# Step 2 — DELETE
+uc_step "Step 2/2" "DELETE"
+uc_source "Delete department 20."
+BEFORE_DELETE=$(get_sink_count "DEPARTMENTS" 2>/dev/null || echo "0")
 START_DELETE=$(date +%s.%N)
 run_oracle_sql "$USE_CASE_DIR/02_deletes.sql"
-echo "Oracle delete successful"
-EXPECTED_AFTER_DELETE=$((BEFORE_DELETE - 1))
-wait_for_postgres_delete "DEPARTMENTS" "$EXPECTED_AFTER_DELETE" "$START_DELETE"
-echo ""
+wait_for_sink_delete "DEPARTMENTS" "$((BEFORE_DELETE - 1))" "$START_DELETE"
 
-echo "------------------------------------------------------------------------"
-echo -e "${GREEN}✅ USE CASE 2 COMPLETED SUCCESSFULLY${NC}"
-echo "------------------------------------------------------------------------"
+uc_pass "2"

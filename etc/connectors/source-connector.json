@@ -10,20 +10,22 @@
         "value.converter": "io.confluent.connect.avro.AvroConverter",
         "value.converter.schema.registry.url": "http://schema-registry:8081",
 
-        "database.hostname": "oracle-xe",
+        "database.hostname": "oracle-19",
         "database.port": "1521",
         "database.user": "c##cfltuser",
         "database.password": "My_RandomPass192837465",
         "database.dbname": "ORCLCDB",
         "database.service.name": "ORCLCDB",
-        "database.pdb.name": "ORCLPDB1",
+        "database.pdb.name": "SOURCEPDB",
         "database.out.server.name": "XOUT",
         "database.processor.licenses": "1",
 
         "topic.prefix": "xstream",
         "table.include.list": "DEMO[.].*",
         "message.key.columns": "DEMO.JOBS:JOB_ID;",
-        "skipped.operations": "none",
+
+        "topic.creation.default.replication.factor": "3",
+        "topic.creation.default.partitions": "1",
 
         "snapshot.mode": "initial",
         "snapshot.fetch.size": 10000,
@@ -34,12 +36,15 @@
         "max.batch.size": 16384,
         "producer.override.batch.size": 204800,
         "producer.override.linger.ms": 50,
+        "producer.override.compression.type": "lz4",
         "heartbeat.interval.ms": 300000,
         "enable.metrics.collection": "true",
 
-        "decimal.handling.mode": "double",
+        "decimal.handling.mode": "precise",
         "time.precision.mode": "connect",
         "binary.handling.mode": "bytes",
+        "schema.name.adjustment.mode": "avro",
+        "field.name.adjustment.mode": "avro",
 
         "lob.enabled": "true",
         "lob.oversize.threshold": "-1",
@@ -53,8 +58,6 @@
 
         "transforms": "flatten,convertTS",
         "transforms.flatten.type": "io.debezium.transforms.ExtractNewRecordState",
-        "transforms.flatten.drop.tombstones": "false",
-        "transforms.flatten.delete.handling.mode": "none",
         "transforms.flatten.delete.tombstone.handling.mode": "tombstone",
         "transforms.flatten.add.fields": "source.ts_ms:SOURCETIMESTAMP,source.db:MAQUINA_ID",
         "transforms.flatten.add.fields.prefix": "",

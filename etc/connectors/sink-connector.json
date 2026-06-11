@@ -10,17 +10,20 @@
         "value.converter": "io.confluent.connect.avro.AvroConverter",
         "value.converter.schema.registry.url": "http://schema-registry:8081",
 
-        "topics": "xstream.DEMO.EMPLOYEES,xstream.DEMO.DATA_TYPES_TEST,xstream.DEMO.DEPARTMENTS,xstream.DEMO.JOBS,xstream.DEMO.CUSTOMERS,xstream.DEMO.ORDERS,xstream.DEMO.CLOB_TEST",
+        "topics.regex": "xstream\\.DEMO\\..*",
+        "consumer.override.metadata.max.age.ms": "15000",
 
-        "connection.url": "jdbc:postgresql://postgres:5432/test-connector",
-        "connection.user": "test-connector",
-        "connection.password": "test-connector",
-        "dialect.name": "PostgreSqlDatabaseDialect",
+        "connection.url": "jdbc:oracle:thin:@oracle:1521/SINKPDB",
+        "connection.user": "demo",
+        "connection.password": "DemoPass123",
+        "connection.attempts": "12",
+        "connection.backoff.ms": "10000",
+        "dialect.name": "OracleDatabaseDialect",
 
         "insert.mode": "upsert",
         "delete.enabled": "true",
         "batch.size": "1",
-        "auto.create": "true",
+        "auto.create": "false",
         "auto.evolve": "true",
         "pk.mode": "record_key",
 
