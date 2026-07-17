@@ -39,7 +39,7 @@
         "errors.tolerance": "all",
         "errors.log.enable": "true",
         "errors.log.include.messages": "true",
-        "errors.retry.timeout": "10000",
+        "errors.retry.timeout": "120000",
         "errors.retry.delay.max.ms": "2000",
         "max.retries": "30",
         "retry.backoff.ms": "2000",
