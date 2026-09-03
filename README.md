@@ -429,7 +429,7 @@ Requires Use Case 1 (it updates the complex-types row inserted there).
 ### Use case 7 — No key at all: null key routed to the DLQ
 
 The counterpart to use cases 2 and 3. `AUDIT_LOG` is an append-only log with **no PK, no unique index and
-no candidate key column** — and, unlike `JOBS`, it has **no `message.key.columns`** entry either. There is
+no candidate key column** and, unlike `JOBS`, it has **no `message.key.columns`** entry either. There is
 nothing the source connector can use as a key, so every captured record is emitted with a **null key**.
 
 ```bash
@@ -441,7 +441,7 @@ nothing the source connector can use as a key, so every captured record is emitt
 | 1    | `INSERT` 3 rows into `AUDIT_LOG` (null-key CDC)  | 3 records land in `JDBC_SINK_DLQ`; `AUDIT_LOG` stays empty; sink connector still **RUNNING** |
 
 > [!IMPORTANT]
-> **Why the sink would otherwise crash — and why `errors.tolerance: all` doesn't save it.** With
+> **Why the sink would otherwise crash and why `errors.tolerance: all` doesn't save it.** With
 > `delete.enabled: true` + `pk.mode: record_key`, the JDBC sink requires a non-null key and rejects the
 > record inside its `put()` call:
 >
@@ -451,7 +451,7 @@ nothing the source connector can use as a key, so every captured record is emitt
 > at (topic='…',partition=0,offset=0) with a null key and null key schema.
 > ```
 >
-> Kafka Connect's `errors.tolerance`/DLQ only cover the **converter and transformation** stages — **not**
+> Kafka Connect's `errors.tolerance`/DLQ only cover the **converter and transformation** stages, **not**
 > errors thrown while *delivering* to the sink (`put()`). So a null-key record thrown there is treated as
 > *unrecoverable*: the task goes `FAILED` and the offset never advances. The record is neither written nor
 > sent to the DLQ. That is exactly the incident this use case reproduces safely.
