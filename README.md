@@ -201,6 +201,7 @@ replicated correctly.
 | 4 | CLOB values: populated vs `NULL` vs `EMPTY_CLOB()`      | `CLOB_TEST`                    | `bin/08_run_use_case_4.sh` |
 | 5 | Parent/child **foreign keys** with out-of-order arrival | `CUSTOMERS`, `ORDERS`          | `bin/09_run_use_case_5.sh` |
 | 6 | Updates that **don't touch** a LOB column (custom SMT)  | `DATA_TYPES_TEST`              | `bin/10_run_use_case_6.sh` |
+| 7 | **No key at all** — null key routed to the DLQ          | `AUDIT_LOG`                    | `bin/11_run_use_case_7.sh` |
 
 > [!NOTE]
 > Run the use cases **in order** on a fresh environment (Use Case 6 updates a row inserted by Use Case 1).
@@ -425,6 +426,73 @@ Requires Use Case 1 (it updates the complex-types row inserted there).
 
 ---
 
+### Use case 7 — No key at all: null key routed to the DLQ
+
+The counterpart to use cases 2 and 3. `AUDIT_LOG` is an append-only log with **no PK, no unique index and
+no candidate key column** — and, unlike `JOBS`, it has **no `message.key.columns`** entry either. There is
+nothing the source connector can use as a key, so every captured record is emitted with a **null key**.
+
+```bash
+./bin/11_run_use_case_7.sh
+```
+
+| Step | Change applied to SOURCEPDB                      | Observed result                                          |
+| :--- | :----------------------------------------------- | :------------------------------------------------------- |
+| 1    | `INSERT` 3 rows into `AUDIT_LOG` (null-key CDC)  | 3 records land in `JDBC_SINK_DLQ`; `AUDIT_LOG` stays empty; sink connector still **RUNNING** |
+
+> [!IMPORTANT]
+> **Why the sink would otherwise crash — and why `errors.tolerance: all` doesn't save it.** With
+> `delete.enabled: true` + `pk.mode: record_key`, the JDBC sink requires a non-null key and rejects the
+> record inside its `put()` call:
+>
+> ```text
+> Sink connector is configured with 'delete.enabled=true' and 'pk.mode=record_key' and therefore
+> requires records with a non-null key and non-null Struct or primitive key schema, but found record
+> at (topic='…',partition=0,offset=0) with a null key and null key schema.
+> ```
+>
+> Kafka Connect's `errors.tolerance`/DLQ only cover the **converter and transformation** stages — **not**
+> errors thrown while *delivering* to the sink (`put()`). So a null-key record thrown there is treated as
+> *unrecoverable*: the task goes `FAILED` and the offset never advances. The record is neither written nor
+> sent to the DLQ. That is exactly the incident this use case reproduces safely.
+
+<details>
+<summary><b>How the null key is diverted to the DLQ</b></summary>
+
+The fix moves the failure **into the transform stage**, which `errors.tolerance` *does* cover. The sink
+chains a small custom SMT, `io.confluent.csta.smt.RequireNonNullKey` (source in [smt/](smt/), same Maven
+module as use case 6's `RemoveAttributeWithValue`), as the first step of its transform chain
+([etc/connectors/sink-connector.json](etc/connectors/sink-connector.json)):
+
+```json
+"transforms.assertKey.type": "io.confluent.csta.smt.RequireNonNullKey"
+```
+
+It does one thing: `throw` a `DataException` when `record.key() == null`, otherwise pass the record
+through untouched.
+
+- A **non-null** key passes straight through — every keyed table (use cases 1–6) is unaffected, and
+  tombstone `DELETE`s (null *value*, non-null *key*) still work.
+- A **null** key makes it throw *in the SMT stage* — so `errors.tolerance: all` routes the record to
+  `JDBC_SINK_DLQ` (with the failure reason in its headers, thanks to
+  `errors.deadletterqueue.context.headers.enable: true`) and the task keeps running.
+
+> [!NOTE]
+> **Why not the stock Confluent `Filter$Key` SMT** (`io.confluent.connect.transforms.Filter$Key` +
+> `missing.or.null.behavior=fail`)? It looks like the natural fit, but its `missing.or.null.behavior`
+> governs a JSON Path expression *evaluated inside an already-present key* — it fires when a referenced
+> **field** is missing from the key, not when the key **itself** is entirely absent. `Filter`'s `apply()`
+> short-circuits and passes the record through unchanged whenever `record.key() == null`, before
+> `missing.or.null.behavior` is ever consulted. So it cannot intercept exactly the case this use case
+> demonstrates — confirmed by decompiling `connect-transforms-1.6.2.jar`. Hence the ~20-line custom SMT.
+
+This is deliberately a **guard rail**, not a fix for the root cause. The proper solutions are the ones in
+use cases 2 and 3: give the table a unique index, or name its key in `message.key.columns`.
+
+</details>
+
+---
+
 ## 🧹 Resetting the environment
 
 To wipe everything (containers, Kafka topics, and the Oracle data volume) and start fresh:
@@ -450,6 +518,9 @@ Then start again from [Step 2](#step-2--start-the-environment).
 - **Adding your own table?** Pre-create its mirror in `SINKPDB` first (the sink runs with
   `auto.create: false`); then create the table in `SOURCEPDB.DEMO` — `table.include.list` and
   `topics.regex` pick it up automatically. Without the sink table, its records park in the DLQ.
+- **Changed the `connect` `command:` (e.g. to add a plugin)?** Connector plugins are installed when the
+  container starts, so re-deploying a connector is not enough — recreate the worker with
+  `docker compose up -d --build --force-recreate connect`.
 
 </details>
 

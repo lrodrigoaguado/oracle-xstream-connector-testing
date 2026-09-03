@@ -27,7 +27,8 @@
         "auto.evolve": "true",
         "pk.mode": "record_key",
 
-        "transforms": "routeTopic,RemovePlaceholder,insertTS",
+        "transforms": "assertKey,routeTopic,RemovePlaceholder,insertTS",
+        "transforms.assertKey.type": "io.confluent.csta.smt.RequireNonNullKey",
         "transforms.routeTopic.type": "org.apache.kafka.connect.transforms.RegexRouter",
         "transforms.routeTopic.regex": "(.*)\\.DEMO\\.(.*)",
         "transforms.routeTopic.replacement": "$2",

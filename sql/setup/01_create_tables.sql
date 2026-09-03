@@ -26,6 +26,11 @@ EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;
 END;
 /
 BEGIN
+   EXECUTE IMMEDIATE 'DROP TABLE DEMO.AUDIT_LOG CASCADE CONSTRAINTS';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;
+END;
+/
+BEGIN
    EXECUTE IMMEDIATE 'DROP TABLE DEMO.DATA_TYPES_TEST CASCADE CONSTRAINTS';
 EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;
 END;
@@ -67,6 +72,20 @@ CREATE TABLE DEMO.JOBS (
     JOB_TITLE VARCHAR2(35),
     MIN_SALARY NUMBER(6),
     MAX_SALARY NUMBER(6)
+);
+
+-- Table for Use Case 7: the degenerate keyless case.
+-- Unlike DEPARTMENTS (unique index) and JOBS (message.key.columns), this
+-- append-only audit log has NO primary key, NO unique index and NO candidate
+-- key column at all -- there is simply nothing the source connector can use as
+-- a message key, so every captured record is emitted with a NULL key. Use
+-- Case 7 shows how the sink's Filter$Key SMT routes those to the DLQ instead of
+-- crashing the task.
+CREATE TABLE DEMO.AUDIT_LOG (
+    CREATED_AT VARCHAR2(30),
+    ACTION VARCHAR2(20),
+    ENTITY VARCHAR2(50),
+    DETAILS VARCHAR2(200)
 );
 
 -- Table for Use Case 4: Referential Integrity (Parent)

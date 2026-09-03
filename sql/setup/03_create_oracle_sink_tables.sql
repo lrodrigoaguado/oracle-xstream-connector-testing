@@ -56,6 +56,11 @@ EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;
 END;
 /
 BEGIN
+   EXECUTE IMMEDIATE 'DROP TABLE AUDIT_LOG CASCADE CONSTRAINTS';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;
+END;
+/
+BEGIN
    EXECUTE IMMEDIATE 'DROP TABLE CLOB_TEST CASCADE CONSTRAINTS';
 EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;
 END;
@@ -96,6 +101,22 @@ CREATE TABLE JOBS (
     JOB_TITLE       VARCHAR2(35),
     MIN_SALARY      NUMBER(6),
     MAX_SALARY      NUMBER(6),
+    SOURCETIMESTAMP TIMESTAMP,
+    SINKTIMESTAMP   TIMESTAMP,
+    MAQUINA_ID      VARCHAR2(50)
+);
+
+-- AUDIT_LOG: unlike DEPARTMENTS/JOBS this table has NO candidate key at all, so
+-- difference #2 (promote the key column to a PK) does NOT apply -- there is no
+-- column to promote. It is pre-created only so the incident is reproduced
+-- exactly as at the customer (same table on both sides); its records never
+-- actually land here because the sink's Filter$Key SMT diverts every null-key
+-- record to the DLQ (use case 7). The row count stays 0 by design.
+CREATE TABLE AUDIT_LOG (
+    CREATED_AT      VARCHAR2(30),
+    ACTION          VARCHAR2(20),
+    ENTITY          VARCHAR2(50),
+    DETAILS         VARCHAR2(200),
     SOURCETIMESTAMP TIMESTAMP,
     SINKTIMESTAMP   TIMESTAMP,
     MAQUINA_ID      VARCHAR2(50)

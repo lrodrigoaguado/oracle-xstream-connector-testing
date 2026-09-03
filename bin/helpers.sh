@@ -188,6 +188,71 @@ wait_for_replication() {
     done
 }
 
+# ─────────────────────────────────────────────────────────────────────────
+# Connect-side helpers — used by use case 7, where the interesting outcome is
+# NOT a row landing in the sink but a bad record being diverted to the DLQ
+# while the connector stays alive. These read the Connect REST API (:8083) and
+# count messages on a Kafka topic via a broker container.
+# ─────────────────────────────────────────────────────────────────────────
+CONNECT_URL="${CONNECT_URL:-http://localhost:8083}"
+
+# Overall connector state (RUNNING / FAILED / ...).  $1 = connector name
+get_connector_state() {
+    local connector="$1"
+    curl -s "$CONNECT_URL/connectors/$connector/status" 2>/dev/null \
+        | jq -r '.connector.state // "UNKNOWN"' 2>/dev/null
+}
+
+# Number of tasks currently in FAILED state.  $1 = connector name
+get_failed_task_count() {
+    local connector="$1"
+    curl -s "$CONNECT_URL/connectors/$connector/status" 2>/dev/null \
+        | jq '[.tasks[]? | select(.state == "FAILED")] | length' 2>/dev/null || echo "0"
+}
+
+# Total messages on a topic (sum of end offsets across partitions).  $1 = topic
+get_dlq_count() {
+    local topic="$1"
+    docker exec broker1 kafka-get-offsets --bootstrap-server broker1:29092 \
+        --topic "$topic" 2>/dev/null | awk -F: '{sum += $3} END {print sum+0}'
+}
+
+# Wait until a topic reaches at least $2 messages, reporting the count.
+#   $1 = topic   $2 = expected minimum   $3 = timeout (default 30)
+wait_for_dlq() {
+    local topic="$1"
+    local expected="$2"
+    local timeout=${3:-30}
+    local start_time=$(date +%s)
+
+    echo -n "    ⏳ Waiting for the DLQ … "
+    while true; do
+        local count=$(get_dlq_count "$topic")
+        if [ "${count:-0}" -ge "$expected" ]; then
+            echo -e "${GREEN}✅ ${count} record(s) in ${topic}${NC}"
+            return 0
+        fi
+
+        elapsed=$(($(date +%s) - start_time))
+        if [ $elapsed -ge $timeout ]; then
+            echo -e "${RED}❌ timed out after ${timeout}s (expected ≥${expected}, got ${count:-0})${NC}"
+            return 1
+        fi
+        sleep 1
+    done
+}
+
+# Best-effort: print the error reason recorded in a DLQ record's headers.
+# $1 = topic
+show_dlq_error() {
+    local topic="$1"
+    docker exec broker1 kafka-console-consumer --bootstrap-server broker1:29092 \
+        --topic "$topic" --from-beginning --max-messages 1 --timeout-ms 10000 \
+        --property print.headers=true 2>/dev/null \
+        | tr '\t' '\n' \
+        | grep -a -o '__connect.errors.exception.message[^,]*' | head -1
+}
+
 # Helper function for high-precision delete timing on the sink
 wait_for_sink_delete() {
     local table="$1"
