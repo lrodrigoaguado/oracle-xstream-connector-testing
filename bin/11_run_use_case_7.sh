@@ -23,7 +23,9 @@ SINK_COUNT_BEFORE=$(get_sink_count "AUDIT_LOG" 2>/dev/null || echo "0")
 uc_step "Step 1/1" "INSERT 3 audit rows (each becomes a NULL-key record)"
 uc_source "INSERT 3 rows into AUDIT_LOG (LOGIN, UPDATE, DELETE audit events)."
 run_oracle_sql "$USE_CASE_DIR/01_operations.sql"
-wait_for_dlq "$DLQ_TOPIC" "$((DLQ_BEFORE + 3))"
+# Sink's errors.retry.timeout=120000ms retries the SMT's DataException before giving up and
+# routing to the DLQ, so the default 30s wait_for_dlq timeout isn't enough here.
+wait_for_dlq "$DLQ_TOPIC" "$((DLQ_BEFORE + 3))" 150
 
 # The records must NOT have been written to the sink table …
 SINK_COUNT_AFTER=$(get_sink_count "AUDIT_LOG" 2>/dev/null || echo "0")

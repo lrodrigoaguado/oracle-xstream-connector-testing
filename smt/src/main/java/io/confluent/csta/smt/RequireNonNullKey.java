@@ -31,7 +31,7 @@ public class RequireNonNullKey<R extends ConnectRecord<R>> implements Transforma
     public static final String OVERVIEW_DOC = "Fails the record (routed to the DLQ under "
             + "errors.tolerance=all) if its Kafka message key is null.";
 
-    private static final ConfigDef CONFIG_DEF = new ConfigDef(Collections.emptyList());
+    private static final ConfigDef CONFIG_DEF = new ConfigDef();
 
     @Override
     public void configure(Map<String, ?> configs) {
