@@ -1,0 +1,13 @@
+{
+    "type": "execute-snapshot",
+    "data": {
+        "type": "blocking",
+        "data-collections": ["SOURCEPDB[.]DEMO[.]EMPLOYEES"],
+        "additional-conditions": [
+            {
+                "data-collection": "SOURCEPDB.DEMO.EMPLOYEES",
+                "filter": "SELECT * FROM DEMO.EMPLOYEES WHERE DEPARTMENT LIKE '%Engineering'"
+            }
+        ]
+    }
+}

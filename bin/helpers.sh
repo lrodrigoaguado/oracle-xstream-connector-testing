@@ -90,6 +90,25 @@ EXIT;
 SQL
 }
 
+# Run a SQL file against the SINK PDB (silently).  $1 = sql file
+run_sink_sql() {
+    cat "$1" | docker exec -i oracle-19 sqlplus -S demo/DemoPass123@//localhost:1521/SINKPDB > /dev/null 2>&1
+}
+
+# Run a single SELECT against SOURCEPDB.DEMO and return the bare value.
+source_query() {
+    local sql="$1"
+    docker exec -i oracle-19 sqlplus -S demo/DemoPass123@//localhost:1521/SOURCEPDB <<SQL 2>/dev/null | xargs
+SET HEADING OFF
+SET FEEDBACK OFF
+SET PAGESIZE 0
+SET LINESIZE 32767
+WHENEVER SQLERROR EXIT FAILURE;
+$sql
+EXIT;
+SQL
+}
+
 # Helper function to get sink row count
 get_sink_count() {
     local table="$1"
@@ -277,5 +296,61 @@ wait_for_sink_delete() {
             return 1
         fi
         sleep 0.5
+    done
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# Signal helpers — used by use case 8 to trigger an ad hoc snapshot by
+# publishing a message to the connector's Kafka signal topic.
+# ─────────────────────────────────────────────────────────────────────────
+SIGNAL_TOPIC="${SIGNAL_TOPIC:-xstream-signals}"
+# The signal's message key must equal the source connector's topic.prefix.
+SIGNAL_KEY="${SIGNAL_KEY:-xstream}"
+
+# Publish a signal JSON file to the signal topic, echoing what is being sent.
+#   $1 = path to the signal JSON file
+send_signal() {
+    local file="$1"
+    local payload
+    payload=$(jq -c . "$file")
+    uc_note "Producing to topic '${SIGNAL_TOPIC}' (key '${SIGNAL_KEY}'):"
+    echo "$payload" | jq . | sed 's/^/        /'
+    echo "${SIGNAL_KEY}|${payload}" | docker exec -i broker1 kafka-console-producer         --bootstrap-server broker1:29092 --topic "$SIGNAL_TOPIC"         --property parse.key=true --property key.separator='|' > /dev/null 2>&1
+}
+
+# Total consumer lag of the sink connector across all its topics. The sink commits its
+# offsets every offset.flush.interval.ms (10s here), so this trails reality by a few seconds.
+get_sink_lag() {
+    docker exec broker1 kafka-consumer-groups --bootstrap-server broker1:29092 \
+        --describe --group connect-JdbcSinkConnector 2>/dev/null \
+        | awk '$6 ~ /^[0-9]+$/ {sum += $6} END {print sum+0}'
+}
+
+# Wait until the sink has consumed everything produced so far, so a use case never starts
+# while the previous one is still being written (or retried) by the sink.
+#   $1 = timeout in seconds (default 180)
+wait_for_sink_idle() {
+    local timeout=${1:-180}
+    local start_time=$(date +%s)
+    local idle_samples=0
+
+    echo -n "    ⏳ Waiting for the sink to finish the previous use case … "
+    while true; do
+        if [ "$(get_sink_lag)" -eq 0 ]; then
+            idle_samples=$((idle_samples + 1))
+        else
+            idle_samples=0
+        fi
+        # Two consecutive clean samples, so a record produced a moment ago is not missed.
+        if [ "$idle_samples" -ge 2 ]; then
+            echo -e "${GREEN}✅ idle after $(($(date +%s) - start_time))s${NC}"
+            return 0
+        fi
+
+        if [ $(($(date +%s) - start_time)) -ge $timeout ]; then
+            echo -e "${RED}❌ still busy after ${timeout}s${NC}"
+            return 1
+        fi
+        sleep 2
     done
 }

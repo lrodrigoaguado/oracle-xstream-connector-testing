@@ -140,6 +140,7 @@ This creates the six `DEMO` source tables and their seed data in `SOURCEPDB`, an
 ./bin/04_deploy_connectors.sh
 ```
 
+This also pre-creates the single-partition change-event topics (`xstream.DEMO.*`, so the sink is subscribed to them from the start) and the `xstream-signals` topic that [use case 8](#use-case-8--on-demand-snapshot-triggered-by-a-kafka-signal) uses to send signals to the source connector.
 Both connectors should report `deployed successfully`. You can watch them (and the `xstream.DEMO.*` topics)
 in Control Center at <http://localhost:9021> — both `OracleXStreamSourceConnector` and `JdbcSinkConnector`
 should be **Running**.
@@ -202,9 +203,10 @@ replicated correctly.
 | 5 | Parent/child **foreign keys** with out-of-order arrival | `CUSTOMERS`, `ORDERS`          | `bin/09_run_use_case_5.sh` |
 | 6 | Updates that **don't touch** a LOB column (custom SMT)  | `DATA_TYPES_TEST`              | `bin/10_run_use_case_6.sh` |
 | 7 | **No key at all** — null key routed to the DLQ          | `AUDIT_LOG`                    | `bin/11_run_use_case_7.sh` |
+| 8 | **On-demand snapshot** triggered by a Kafka signal      | `EMPLOYEES`                    | `bin/12_run_use_case_8.sh` |
 
 > [!NOTE]
-> Run the use cases **in order** on a fresh environment (Use Case 6 updates a row inserted by Use Case 1).
+> Run the use cases **in order** on a fresh environment (Use Case 6 updates a row inserted by Use Case 1, and Use Case 8 inserts employee 8).
 > They are designed as a single pass — to replay the demo, [reset the environment](#-resetting-the-environment) first.
 
 Every sink table also receives three metadata columns, so you can trace each record: `MAQUINA_ID`
@@ -374,7 +376,7 @@ empty → value, value → empty, and that updating a non-CLOB column leaves CLO
 | :--- | :---------------------------------------------------------- | :----------------------------------------- |
 | 1    | `INSERT` customer 1, then order 101                         | Both rows arrive                           |
 | 2    | `UPDATE` the customer's name and the order's amount         | Both updates arrive                        |
-| 3    | `INSERT` **order 102 before customer 2** (same transaction) | Both rows arrive — retries handle ordering |
+| 3    | `INSERT` **order 102 before customer 2** (same transaction) | Both rows arrive — same-transaction commit |
 | 4    | `DELETE` order 101, then customer 1                         | Both deletes arrive, FK never violated     |
 
 <details>
@@ -382,13 +384,22 @@ empty → value, value → empty, and that updating a non-CLOB column leaves CLO
 
 Three mechanisms work together:
 
-1. **Smart retries** (sink): `tasks.max: 4`, `batch.size: 1`, `max.retries: 30`, `retry.backoff.ms: 2000`.
-   If an order hits an FK violation because its customer hasn't arrived yet, only that record retries
-   (up to ~60 s) while other tasks keep processing — the parent lands, then the retry succeeds.
+1. **One transaction per batch** (sink): the JDBC sink writes everything it polled in a single database
+   transaction. The source emits a transaction's changes together, so an order and the customer it
+   references normally arrive in the same poll and commit together.
 2. **Deferrable constraints** (database): the FK on both PDBs is `DEFERRABLE INITIALLY DEFERRED`, so
    Oracle validates at `COMMIT`, tolerating any insert order inside a transaction.
-3. **Dead letter queue** (sink): `errors.tolerance: all` with DLQ topic `JDBC_SINK_DLQ` — a record that
-   exhausts all retries is parked there instead of stopping the pipeline.
+3. **Retries and dead letter queue** (sink): `max.retries: 10` with `retry.backoff.ms: 2000` re-run a failed
+   write for ~20 s, which covers transient database errors. A record that exhausts the retries is parked
+   in `JDBC_SINK_DLQ` (`errors.tolerance: all`) instead of stopping the pipeline.
+
+> [!NOTE]
+> **Why the topics are created up front.** Retrying cannot fix a missing parent: while Kafka Connect
+> redelivers a failed batch it pauses the consumer, so the parent's topic is not read until the retries
+> end. If a topic were created by its first record, the sink would only discover it through a rebalance
+> in the middle of the use case, and the first poll could contain the child without the parent.
+> [bin/04_deploy_connectors.sh](bin/04_deploy_connectors.sh) therefore pre-creates every
+> `xstream.DEMO.*` topic, so the sink is already subscribed to them.
 
 </details>
 
@@ -400,7 +411,8 @@ When an Oracle `UPDATE` doesn't modify a LOB column, XStream **does not include 
 record. The source connector emits a placeholder (`__cflt_unavailable_value`) instead — and without
 intervention the sink would overwrite real data with that placeholder. A **custom SMT** fixes this.
 
-Requires Use Case 1 (it updates the complex-types row inserted there).
+Requires Use Case 1 (it updates the complex-types row inserted there). The script first waits until the sink has
+finished replicating the previous use case, so it is safe to run right after Use Case 5.
 
 ```bash
 ./bin/10_run_use_case_6.sh
@@ -493,6 +505,83 @@ use cases 2 and 3: give the table a unique index, or name its key in `message.ke
 
 ---
 
+### Use case 8 — On-demand snapshot triggered by a Kafka signal
+
+The initial snapshot only runs once, when the connector first starts. But what if a table has to be
+re-sent later — rows were lost downstream, a new consumer needs the full history, or a table was added to
+`table.include.list`? The Oracle XStream CDC Source Connector supports
+[**signals**](https://docs.confluent.io/kafka-connectors/oracle-xstream-cdc-source/current/signals-actions.html):
+you publish a message to a Kafka topic, and the connector runs an **ad hoc blocking snapshot** of the tables you name
+— no restart, no offset reset.
+
+```bash
+./bin/12_run_use_case_8.sh
+```
+
+Unlike the other use cases, this one can be **replayed** as many times as you like — it ends with the sink table complete.
+
+| Step | What happens                                                                  | Observed result                                    |
+| :--- | :---------------------------------------------------------------------------- | :------------------------------------------------- |
+| 1    | `EMPLOYEES` is emptied **in `SINKPDB` only** (simulated incident)             | Sink table empty; source untouched                 |
+| 2    | A signal for `DEMO.EMPLOYEES` is produced to `xstream-signals`                | The sink table is **full again**                   |
+| 3    | `INSERT` employee 8 in `SOURCEPDB`                                            | Replicated normally — streaming resumed            |
+| 4    | Only the *Engineering* rows are deleted in the sink; a **filtered** signal is sent | Only those rows come back; the table is complete |
+
+The signal sent in step 2 is the file [etc/signals/snapshot-employees.json](etc/signals/snapshot-employees.json):
+
+```json
+{
+    "type": "execute-snapshot",
+    "data": {
+        "type": "blocking",
+        "data-collections": ["SOURCEPDB[.]DEMO[.]EMPLOYEES"]
+    }
+}
+```
+
+The script produces it for you, but you can also send it by hand and watch the sink table in another terminal:
+
+```bash
+echo 'xstream|{"type":"execute-snapshot","data":{"type":"blocking","data-collections":["SOURCEPDB[.]DEMO[.]EMPLOYEES"]}}' \
+  | docker exec -i broker1 kafka-console-producer --bootstrap-server broker1:29092 \
+      --topic xstream-signals --property parse.key=true --property key.separator='|'
+```
+
+<details>
+<summary><b>How it is wired</b></summary>
+
+Three properties in [etc/connectors/source-connector.json](etc/connectors/source-connector.json) enable the
+[Kafka signal channel](https://docs.confluent.io/kafka-connectors/oracle-xstream-cdc-source/current/configuration-properties.html):
+
+```json
+"signal.enabled.channels": "kafka",
+"signal.kafka.topic": "xstream-signals",
+"signal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092"
+```
+
+- The topic **must have a single partition** so signals keep their order — `04_deploy_connectors.sh` creates it.
+- The message **key must equal `topic.prefix`** (`xstream`) and the value is a JSON object with `type` and `data`.
+- `data-collections` is a list of regular expressions over `<database>.<schema>.<table>`, here
+  `SOURCEPDB.DEMO.EMPLOYEES`. Names are case-sensitive.
+- The topic name does not match the sink's `topics.regex` (`xstream\.DEMO\..*`), so the sink never reads signals.
+- The alternative **source channel** (a signaling table inside Oracle) also works, but it needs extra Oracle
+  setup — supplemental logging and adding the table to the XStream rule sets — so this demo uses Kafka.
+
+**What the connector does:** it pauses streaming, snapshots the tables with the same process as the initial snapshot, and
+resumes streaming. Snapshot rows are appended to the table's existing topic (`xstream.DEMO.EMPLOYEES`) with `op = r`.
+
+The filtered signal in step 4
+([etc/signals/snapshot-employees-engineering.json](etc/signals/snapshot-employees-engineering.json))
+adds an `additional-conditions` entry, whose `filter` is a `SELECT` statement choosing which rows to re-send.
+
+> [!NOTE]
+> A snapshot **re-sends rows; it never sends deletes**. Rows deleted at the source remain in a sink that was not
+> emptied first. The sink's `upsert` mode makes any duplicates around the snapshot harmless.
+
+</details>
+
+---
+
 ## 🧹 Resetting the environment
 
 To wipe everything (containers, Kafka topics, and the Oracle data volume) and start fresh:
@@ -513,6 +602,8 @@ Then start again from [Step 2](#step-2--start-the-environment).
 - **A use-case script times out** but the connectors show *Running*: check the DLQ topic `JDBC_SINK_DLQ`
   and the Connect log (`docker logs connect`) — `errors.tolerance: all` keeps the sink running even when
   individual records fail.
+- **Use case 8 says the signal topic is missing**: it is created by `04_deploy_connectors.sh`. Run
+  `./bin/04_deploy_connectors.sh` again (it is idempotent) — the connector then picks up the signal settings.
 - **Re-running a use case fails**: expected — the SQL scripts are one-shot (e.g. they delete a specific
   row or add a column that now already exists). Reset the environment to replay.
 - **Adding your own table?** Pre-create its mirror in `SINKPDB` first (the sink runs with

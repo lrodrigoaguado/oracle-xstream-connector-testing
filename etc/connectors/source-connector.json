@@ -65,6 +65,10 @@
         "transforms.convertTS.target.type": "Timestamp",
         "transforms.convertTS.field": "SOURCETIMESTAMP",
 
+        "signal.enabled.channels": "kafka",
+        "signal.kafka.topic": "xstream-signals",
+        "signal.kafka.bootstrap.servers": "broker1:29092,broker2:29092,broker3:29092",
+
         "errors.log.enable": "true",
         "errors.log.include.messages": "true"
     }

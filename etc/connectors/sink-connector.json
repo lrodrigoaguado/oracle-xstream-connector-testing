@@ -42,7 +42,7 @@
         "errors.log.include.messages": "true",
         "errors.retry.timeout": "120000",
         "errors.retry.delay.max.ms": "2000",
-        "max.retries": "30",
+        "max.retries": "10",
         "retry.backoff.ms": "2000",
         "errors.deadletterqueue.topic.name": "JDBC_SINK_DLQ",
         "errors.deadletterqueue.context.headers.enable": "true"

@@ -12,6 +12,10 @@ uc_intro "6" "Partial LOB update — custom SMT" \
   unchanged LOB instead of its value. A custom SMT strips that placeholder so
   the sink keeps the CLOB it already has, rather than overwriting it with junk."
 
+# Gate — use case 5 leaves its last records in flight; do not start until the sink has drained them
+uc_step "Setup" "Wait for the previous use case to finish"
+wait_for_sink_idle
+
 # Preparation — set a known baseline for the CLOB on the sink
 uc_step "Setup" "Set a known CLOB baseline on the sink"
 docker exec -i oracle-19 sqlplus -S demo/DemoPass123@//localhost:1521/SINKPDB > /dev/null 2>&1 <<'SQL'

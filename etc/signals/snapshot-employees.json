@@ -1,0 +1,7 @@
+{
+    "type": "execute-snapshot",
+    "data": {
+        "type": "blocking",
+        "data-collections": ["SOURCEPDB[.]DEMO[.]EMPLOYEES"]
+    }
+}
